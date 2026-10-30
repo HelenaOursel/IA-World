@@ -14,6 +14,7 @@ export const KIND_ICONS = {
   think: '..',
   talk: '>',
   other: '%',
+  trash: 'x',
   prompt: '<',
   error: '!',
   done: 'ok',

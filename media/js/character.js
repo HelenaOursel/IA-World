@@ -125,6 +125,16 @@ function drawFace(g, w, h, s) {
       g.ellipse(w / 2, h * 0.7, 4 + s.mouth * 2, 3 + s.mouth * 4, 0, 0, Math.PI * 2);
       g.fill();
       break;
+    case 'cheeky':
+      // Concentré sur sa bêtise : petit sourire en coin et bout de langue.
+      eyes(eh * 0.78);
+      sparkle();
+      mouth(() => g.arc(w / 2 - 2, h * 0.66, 10, Math.PI * 0.1, Math.PI * 0.75));
+      g.fillStyle = g.shadowColor = '#ff6f9f';
+      g.beginPath();
+      g.ellipse(w / 2 + 7, h * 0.76, 5.5, 7, -0.3, 0, Math.PI * 2);
+      g.fill();
+      break;
     case 'focus':
       eyes(eh * 0.62, 4);
       sparkle(4);
@@ -317,6 +327,11 @@ export class Character {
     this.signalFlash = Math.max(0, this.signalFlash - dt * 1.5);
   }
 
+  /** Main droite, en coordonnées monde (d'où partent les objets lancés). */
+  handPosition(out) {
+    return this.armR.elbow.localToWorld(out.set(0, -0.16, 0));
+  }
+
   /** Pointe de l'antenne, en coordonnées monde. */
   antennaTip(out) {
     return this.antennaBall.getWorldPosition(out);
@@ -466,6 +481,17 @@ export class Character {
         p.tiltZ = 0.07;
         p.bob = Math.sin(t * 1.2 + this.phase) * 0.012 - 0.01;
         break;
+      case 'doodle':
+        // Bras levé qui gribouille, propulseurs allumés pour atteindre le tableau.
+        p.sRx = -2.5 + Math.sin(t * 9) * 0.18;
+        p.sRz = 0.15 + Math.cos(t * 11) * 0.2;
+        p.eR = -0.3;
+        p.sLx = -0.3;
+        p.sLz = -0.3;
+        p.tiltX = -0.2;
+        p.yaw = this.glance(t) * 0.35;
+        p.lift = 0.5 + Math.sin(t * 2.2 + this.phase) * 0.03;
+        break;
       case 'type':
         p.sLx = type(0);
         p.sRx = type(Math.PI);
@@ -525,6 +551,15 @@ export class Character {
         p.sRz = 0.3;
         p.bob = Math.abs(Math.sin(t * 6)) * 0.02;
         break;
+      case 'aim':
+        // Tient l'objet au-dessus de l'épaule et vise la corbeille
+        p.sRx = -2.5 + Math.sin(t * 3) * 0.06;
+        p.eR = -0.9;
+        p.sRz = 0.15;
+        p.sLx = -0.9;
+        p.sLz = -0.2;
+        p.tiltX = -0.05;
+        break;
       case 'ask':
         p.sRx = -2.9;
         p.sRz = 0.4 + Math.sin(t * 9) * 0.35;
@@ -534,6 +569,12 @@ export class Character {
         break;
     }
     return p;
+  }
+
+  /** En train de faire une bêtise : de temps en temps, un coup d'œil à gauche puis à droite (-1, 0 ou 1). */
+  glance(t) {
+    const c = (t * 0.35 + this.phase) % 1;
+    return c < 0.82 ? 0 : c < 0.91 ? -1 : 1;
   }
 
   computeFace(action, t, dt) {
@@ -573,6 +614,11 @@ export class Character {
         f.expr = 'sleep';
         f.eyeY = 0.5;
         f.mouth = 0.5 + Math.sin(t * 1.2 + this.phase) * 0.5;
+        break;
+      case 'doodle':
+        f.expr = 'cheeky';
+        f.eyeX = this.glance(t) * 0.9;
+        f.eyeY = f.eyeX ? 0.1 : -0.6;
         break;
     }
     // Clignement
@@ -639,6 +685,15 @@ export class Character {
       p.sLx = p.sRx = -2.7;
       p.sLz = -0.5 + Math.sin(t * 10) * 0.15;
       p.sRz = 0.5 - Math.sin(t * 10) * 0.15;
+    } else if (r.type === 'throw') {
+      // Armé vers l'arrière puis détente vers l'avant
+      const k = x < 0.35 ? x / 0.35 : 1;
+      const release = x < 0.35 ? 0 : Math.min(1, (x - 0.35) / 0.2);
+      p.sRx = -2.9 + release * 1.9 - k * 0.2;
+      p.eR = -1.2 + release * 1.1;
+      p.sRz = 0.15;
+      p.tiltX = -0.1 + release * 0.25;
+      p.lift = release * Math.sin(release * Math.PI) * 0.06;
     } else if (r.type === 'catch') {
       // Tend les bras pour attraper la puce
       f.expr = 'surprise';

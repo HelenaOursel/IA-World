@@ -7,6 +7,7 @@ import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass
 import { RoomEnvironment } from '../vendor/addons/environments/RoomEnvironment.js';
 import { Character } from './character.js';
 import { Demo } from './demo.js';
+import { eraseDoodle, makeDoodle } from './doodles.js';
 import { Effects } from './effects.js';
 import { Hud, KIND_ICONS, plainText } from './hud.js';
 import { buildWorld, docRows, randomCodeRow } from './world.js';
@@ -23,6 +24,7 @@ const KIND_STATION = {
   web: ['web', 'type'],
   plan: ['plan', 'plan'],
   agent: ['agent', 'summon'],
+  trash: ['trash', 'aim'],
   other: ['bash', 'type'],
 };
 
@@ -210,6 +212,89 @@ function dropChip(x, y) {
   return true;
 }
 
+// ------------------------------------------------------- bêtises au tableau
+
+// Un robot qui s'ennuie à la borne va parfois gribouiller sur le tableau de planification.
+const DOODLE_START_LINES = ['Hihi…', 'Chut !', 'Personne regarde ?', 'Juste un petit dessin…', 'Le tableau est libre !'];
+const DOODLE_DONE_LINES = ['Joli, non ?', 'Chef-d’oeuvre !', 'Trop mignon !', 'Je signe ?', 'Bip boup, fini !'];
+const BOARD_W = 2.75; // largeur de l'écran du tableau (m), pour 640 px de canvas
+
+function canDoodle() {
+  const doodlers = [...chars.values()].filter((c) => c.doodle).length;
+  return !st.plan.busy && doodlers < 2;
+}
+
+function startDoodle(ch) {
+  const plan = st.plan;
+  // Une place devant le tableau, loin des autres dessinateurs et des dessins encore visibles.
+  const taken = [
+    ...[...chars.values()].filter((c) => c.doodle).map((c) => c.doodle.x),
+    ...plan.doodles.map((d) => (d.cx / 640 - 0.5) * BOARD_W),
+  ];
+  let x = 0, best = -1;
+  for (let i = 0; i < 8; i++) {
+    const cand = (Math.random() * 2 - 1) * 1.0;
+    const dist = Math.min(9, ...taken.map((v) => Math.abs(v - cand)));
+    if (dist > best) {
+      best = dist;
+      x = cand;
+    }
+  }
+  if (ch.stationKey) st[ch.stationKey].release(ch.id);
+  ch.stationKey = null;
+  ch.wandering = false;
+  ch.doodle = { x, d: null, done: 0 };
+  ch.goTo({ pos: plan.group.localToWorld(new THREE.Vector3(x, 0, 0.5)), face: plan.group.rotation.y + Math.PI }, 'idle');
+  hud.setActivityText(ch.id, '~ Dessine au tableau');
+}
+
+function updateDoodler(ch, dt) {
+  const job = ch.doodle;
+  // Du vrai travail arrive : il file, son dessin reste inachevé.
+  if (!ch.idle || ch.leaving) {
+    if (job.d) job.d.drawing = false;
+    ch.doodle = null;
+    ch.react('surprise', 0.7);
+    return;
+  }
+  if (ch.moving) return;
+
+  const plan = st.plan;
+  if (!job.d) {
+    const alive = plan.doodles.filter((d) => d.life - d.age > d.fade);
+    if (alive.length > 5) eraseDoodle(alive[0], 1.5);
+    job.d = makeDoodle((job.x / BOARD_W + 0.5) * 640, 255 + Math.random() * 60, 80 + Math.random() * 25, ch.color);
+    plan.doodles.push(job.d);
+    ch.setAction('doodle');
+    if (Math.random() < 0.5) hud.say(ch.id, pickLine(DOODLE_START_LINES), 'speech', '', 2.5, false);
+    return;
+  }
+
+  const d = job.d;
+  if (d.drawing) {
+    d.progress = Math.min(1, d.progress + dt / d.duration);
+    plan.doodleDirty = true;
+    if (d.progress >= 1) {
+      d.drawing = false;
+      ch.setAction('idle');
+      ch.react('jump', 1);
+      if (Math.random() < 0.6) hud.say(ch.id, pickLine(DOODLE_DONE_LINES), 'speech', '', 2.5, false);
+    }
+    return;
+  }
+  // Dessin effacé avant d'être fini : la maîtresse est passée.
+  if (ch.action === 'doodle') {
+    ch.setAction('idle');
+    ch.react('surprise', 0.7);
+  }
+  job.done += dt;
+  if (job.done > 2) {
+    ch.doodle = null;
+    moveTo(ch, 'dock', 'sleep');
+    hud.setActivityText(ch.id, 'zZz En recharge');
+  }
+}
+
 function resize() {
   const w = app.clientWidth, h = app.clientHeight;
   renderer.setSize(w, h, false);
@@ -335,6 +420,7 @@ function moveTo(ch, key, action) {
 
 function goIdle(ch) {
   ch.idle = true;
+  ch.pendingThrow = null;
   moveTo(ch, 'dock', 'sleep');
   hud.setActivityText(ch.id, 'zZz En recharge');
 }
@@ -364,6 +450,7 @@ function applyActivity(ch, ev, instant = false) {
       ch.path = [];
     }
     stationEffect(key, ev);
+    ch.pendingThrow = key === 'trash' ? { kind: trashKind(ev.label), real: true } : null;
     hud.say(ch.id, ev.label, 'action', icon, 7);
   } else if (ev.kind === 'think') {
     if (!ch.moving) ch.setAction('think');
@@ -416,8 +503,42 @@ function stationEffect(key, ev) {
   }
 }
 
+// ------------------------------------------------------------- corbeille
+
+const SCORE_LINES = ['Panier !', 'Dans le mille !', 'Trois points !', 'Yes !'];
+const MISS_LINES = ['Oups…', 'Raté !', 'Presque…', 'Zut !'];
+
+/** Objet à jeter selon ce qui est supprimé. */
+function trashKind(label) {
+  if (/\.(json|ya?ml|toml|ini|env|conf|cfg|xml|lock)\b|config/i.test(label)) return 'config';
+  if (/code/i.test(label)) return 'code';
+  return 'file';
+}
+
+/** Le robot, arrivé devant la corbeille, y lance son objet (toujours réussi quand c'est une vraie suppression). */
+function throwToBin(ch) {
+  const job = ch.pendingThrow;
+  ch.pendingThrow = null;
+  const bin = st.trash;
+  ch.react('throw', 0.7);
+  bin.openLid(1.6);
+  setTimeout(() => {
+    if (!chars.has(ch.id)) return;
+    const hit = job.real || Math.random() < 0.7;
+    const mouth = bin.group.localToWorld(bin.mouthLocal.clone());
+    effects.throwItem(ch.handPosition(new THREE.Vector3()), mouth, job.kind, hit, (ok) => {
+      if (job.real) return;
+      ch.react(ok ? 'jump' : 'surprise', ok ? 1.2 : 0.9);
+      hud.say(ch.id, pickLine(ok ? SCORE_LINES : MISS_LINES), 'speech', '', 2, false);
+    });
+    ch.setAction('idle');
+  }, 250);
+}
+
 function setTodos(todos) {
   st.plan.todos = todos || [];
+  // Le plan revient au tableau : les gribouillis sont effacés.
+  for (const d of st.plan.doodles) eraseDoodle(d);
   st.plan.screen.redraw();
 }
 
@@ -625,6 +746,7 @@ let last = performance.now();
 let codeTimer = 0;
 let docTimer = 0;
 let ringTimer = 0;
+let doodleTimer = 0;
 const tmp = new THREE.Vector3();
 
 function updateStations(dt) {
@@ -680,6 +802,22 @@ function updateStations(dt) {
     ringTimer = 0;
     effects.ring(st.web.group.localToWorld(st.web.topLocal.clone()), { color: '#f15bb5', from: 0.05, to: 1.2, life: 1.1 });
   }
+
+  // Gribouillis du tableau : ils vieillissent puis s'effacent, et l'écran suit.
+  const plan = st.plan;
+  if (plan.doodles.length) {
+    doodleTimer += dt;
+    for (const d of plan.doodles) {
+      d.age += dt;
+      if (d.life - d.age < d.fade) plan.doodleDirty = true;
+    }
+    plan.doodles = plan.doodles.filter((d) => d.age < d.life);
+    if (plan.doodleDirty && doodleTimer > 0.06) {
+      doodleTimer = 0;
+      plan.doodleDirty = false;
+      plan.screen.redraw();
+    }
+  }
 }
 
 function updateCharacters(now, dt, t) {
@@ -713,13 +851,23 @@ function updateCharacters(now, dt, t) {
     const q = queues.get(ch.id);
     if (!ch.idle && !q?.items.length && now - ch.lastEventAt > IDLE_AFTER_MS) goIdle(ch);
 
-    // Petites patrouilles quand rien ne se passe.
-    if (ch.idle && !ch.moving) {
-      if (!ch.wandering && Math.random() < dt * 0.03) {
-        const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 1.8;
-        ch.goTo({ pos: new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), face: a + Math.PI }, 'idle');
+    if (ch.pendingThrow && !ch.moving && ch.stationKey === 'trash') throwToBin(ch);
+
+    // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille, ou une bêtise au tableau.
+    if (ch.doodle) updateDoodler(ch, dt);
+    else if (ch.idle && !ch.moving) {
+      if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && canDoodle()) {
+        startDoodle(ch);
+      } else if (!ch.wandering && Math.random() < dt * 0.03) {
+        if (Math.random() < 0.4) {
+          moveTo(ch, 'trash', 'aim');
+          ch.pendingThrow = { kind: 'ball', real: false };
+        } else {
+          const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 1.8;
+          ch.goTo({ pos: new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), face: a + Math.PI }, 'idle');
+        }
         ch.wandering = true;
-      } else if (ch.wandering && Math.random() < dt * 0.12) {
+      } else if (ch.wandering && !ch.pendingThrow && Math.random() < dt * 0.12) {
         moveTo(ch, 'dock', 'sleep');
       }
     }

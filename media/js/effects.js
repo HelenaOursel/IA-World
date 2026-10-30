@@ -44,6 +44,58 @@ function buildChip() {
   return g;
 }
 
+const cardTextures = new Map();
+/** Texture d'une petite carte : feuille de fichier, code ou configuration. */
+function cardTexture(kind) {
+  if (cardTextures.has(kind)) return cardTextures.get(kind);
+  const c = document.createElement('canvas');
+  c.width = 96;
+  c.height = 120;
+  const g = c.getContext('2d');
+  if (kind === 'file') {
+    g.fillStyle = '#f3f6fb';
+    g.fillRect(0, 0, 96, 120);
+    g.fillStyle = '#c9d3e3';
+    g.beginPath();
+    g.moveTo(70, 0);
+    g.lineTo(96, 26);
+    g.lineTo(70, 26);
+    g.fill();
+    g.fillStyle = '#8fa0bb';
+    for (let y = 40; y < 108; y += 13) g.fillRect(14, y, 40 + ((y * 7) % 30), 5);
+  } else {
+    g.fillStyle = kind === 'code' ? '#101827' : '#2a2f3c';
+    g.fillRect(0, 0, 96, 120);
+    g.fillStyle = kind === 'code' ? '#4cc9f0' : '#ffc53d';
+    g.font = kind === 'code' ? '700 40px Consolas, monospace' : '64px "Segoe UI Symbol", sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(kind === 'code' ? '</>' : '⚙', 48, 62);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  cardTextures.set(kind, t);
+  return t;
+}
+
+/** Objet à jeter : une carte (fichier, code, config) ou une boule de papier froissé. */
+function buildTrashItem(kind) {
+  if (kind === 'ball') {
+    const geo = new THREE.IcosahedronGeometry(0.09, 1);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const k = 0.8 + Math.random() * 0.35;
+      pos.setXYZ(i, pos.getX(i) * k, pos.getY(i) * k, pos.getZ(i) * k);
+    }
+    geo.computeVertexNormals();
+    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#eef2f8', roughness: 0.9, flatShading: true }));
+  }
+  const tex = cardTexture(kind);
+  const side = new THREE.MeshStandardMaterial({ color: '#d8dee9', roughness: 0.7 });
+  const face = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 });
+  return new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.012), [side, side, side, side, face, face]);
+}
+
 export class Effects {
   constructor(scene) {
     this.scene = scene;
@@ -67,6 +119,24 @@ export class Effects {
       this.hearts.push({ s, life: 0, max: 1, phase: 0, x: 0, z: 0, alive: false });
     }
     this.chips = [];
+    this.throws = [];
+  }
+
+  /**
+   * Lance un objet en cloche de `from` vers la bouche de la corbeille `to`.
+   * S'il rate (`hit` faux), il rebondit au sol à côté. `onLand(hit)` est appelé à la fin.
+   */
+  throwItem(from, to, kind, hit, onLand) {
+    const m = buildTrashItem(kind);
+    m.position.copy(from);
+    m.castShadow = true;
+    this.scene.add(m);
+    const end = to.clone();
+    if (!hit) {
+      const side = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(0.65);
+      end.add(side).setY(0.06);
+    }
+    this.throws.push({ m, t: 0, from: from.clone(), end, hit, onLand, landed: false, bounce: 0 });
   }
 
   /** Petits cœurs qui s'envolent en se dandinant. */
@@ -211,6 +281,43 @@ export class Effects {
         }
       }
       return true;
+    });
+
+    this.throws = this.throws.filter((th) => {
+      th.t += dt;
+      const dur = 0.75;
+      if (!th.landed) {
+        const x = Math.min(1, th.t / dur);
+        th.m.position.lerpVectors(th.from, th.end, x);
+        th.m.position.y += Math.sin(x * Math.PI) * 0.9;
+        th.m.rotation.set(th.t * 9, th.t * 5, th.t * 3);
+        if (x < 1) return true;
+        th.landed = true;
+        th.t = 0;
+        if (th.hit) this.burst(th.end, { count: 10, colors: ['#7bd88f', '#ffffff'], speed: 0.6, up: 1.4, life: 0.6, gravity: -2, size: 0.03, glow: 1.6 });
+        th.onLand?.(th.hit);
+      }
+      if (th.hit) {
+        // Tombe dans la corbeille
+        th.m.position.y -= dt * 1.2;
+        th.m.scale.setScalar(Math.max(0.01, 1 - th.t * 4));
+        if (th.t < 0.3) return true;
+      } else {
+        // Petit rebond par terre, puis disparition
+        const b = Math.max(0, Math.sin(Math.min(1, th.t / 0.35) * Math.PI)) * 0.12;
+        th.m.position.y = 0.06 + b;
+        th.m.rotation.y += dt * 2;
+        if (th.t > 1.4) {
+          const k = Math.min(1, (th.t - 1.4) / 0.5);
+          for (const mm of [].concat(th.m.material)) {
+            mm.transparent = true;
+            mm.opacity = 1 - k;
+          }
+          if (k < 1) return true;
+        } else return true;
+      }
+      this.scene.remove(th.m);
+      return false;
     });
 
     this.signals = this.signals.filter((sg) => {

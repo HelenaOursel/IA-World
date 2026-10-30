@@ -12,6 +12,7 @@ export type ActivityKind =
   | 'ask'
   | 'think'
   | 'talk'
+  | 'trash'
   | 'other';
 
 export interface Todo {

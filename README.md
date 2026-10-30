@@ -13,11 +13,14 @@ qui correspond à ce qu'il fait, tape sur son clavier, et ses actions s'affichen
 | Web et MCP (`WebFetch`, `mcp__*`)       | RÉSEAU          | graphe réseau, site consulté          |
 | Plan (`TodoWrite`, mode plan)           | PLANIFICATION   | grand écran avec la liste des tâches  |
 | Lancer un agent (`Agent`, `Task`)       | ASSEMBLAGE      | un nouveau robot est assemblé         |
+| Supprimer (`rm`, `Remove-Item`, gros retrait de code) | CORBEILLE | le robot y jette un fichier, du code ou une config |
 | Réflexion, réponse, question            | sur place       | expressions de la visière, bulles     |
 
 Les sous-agents sont assemblés dans la baie avec leur propre couleur (selon leur type) et y retournent
 pour être démontés quand leur mission est terminée. Les robots inactifs se rechargent à la borne centrale.
-Le prompt de l'utilisateur arrive sous forme de paquet de données, et une erreur d'outil fait fumer le robot.
+Le prompt de l'utilisateur arrive comme un signal capté par l'antenne du robot, et une erreur d'outil fait fumer le robot.
+Rien n'est réellement supprimé par le monde 3D : la corbeille illustre seulement ce que fait Claude, et les robots
+inactifs s'y amusent à lancer des boules de papier.
 
 ## Utilisation
 

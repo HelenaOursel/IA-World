@@ -28,6 +28,30 @@ function str(v: unknown, max = 60): string {
   return typeof v === 'string' ? cleanText(v, max, false) : '';
 }
 
+// Commandes de suppression : rm, del, Remove-Item, git rm…
+const DELETE_RE = /(?:^|[\s;&|(])(?:rm|rmdir|rd|del|erase|unlink|Remove-Item|ri|git\s+rm|git\s+clean)(?=\s|$)([^;&|]*)/i;
+
+/** Cible d'une commande de suppression (chaîne vide si inconnue), ou undefined si ce n'en est pas une. */
+function deletedTarget(cmd: string): string | undefined {
+  const m = DELETE_RE.exec(cmd);
+  if (!m) return undefined;
+  const args = m[1].split(/\s+/).filter((a) => a && !a.startsWith('-') && !a.startsWith('/'));
+  const last = args[args.length - 1];
+  return last ? base(last.replace(/^['"]|['"]$/g, '')) : '';
+}
+
+/** Une modification qui retire nettement plus de code qu'elle n'en ajoute. */
+function removesCode(i: any): boolean {
+  if (i.edit_mode === 'delete') return true;
+  const edits: any[] = Array.isArray(i.edits) ? i.edits : [i];
+  let removed = 0, added = 0;
+  for (const e of edits) {
+    removed += typeof e.old_string === 'string' ? e.old_string.length : 0;
+    added += typeof e.new_string === 'string' ? e.new_string.length : 0;
+  }
+  return removed > 80 && added < removed * 0.35;
+}
+
 interface ToolDescription {
   kind: ActivityKind;
   label: string;
@@ -39,7 +63,8 @@ function describeMcp(name: string): ToolDescription {
   const tool = rest.join('__') || name;
   const t = tool.toLowerCase();
   let kind: ActivityKind = 'web';
-  if (/(write|edit|update|create|upload|put|set|delete|insert|patch)/.test(t)) kind = 'write';
+  if (/(delete|remove|trash|purge|drop)/.test(t)) kind = 'trash';
+  else if (/(write|edit|update|create|upload|put|set|insert|patch)/.test(t)) kind = 'write';
   else if (/(search|find|list|query|grep|lookup)/.test(t)) kind = 'search';
   else if (/(read|get|fetch|meta|schema|history|download)/.test(t)) kind = 'read';
   return { kind, label: `${server} › ${tool.replace(/_/g, ' ')}` };
@@ -62,11 +87,16 @@ export function describeTool(name: string, input: any): ToolDescription {
       return { kind: 'write', label: `J'écris ${base(i.file_path) || 'un fichier'}` };
     case 'Edit':
     case 'MultiEdit':
-    case 'NotebookEdit':
-      return { kind: 'write', label: `Je modifie ${base(i.file_path ?? i.notebook_path) || 'un fichier'}` };
+    case 'NotebookEdit': {
+      const file = base(i.file_path ?? i.notebook_path) || 'un fichier';
+      if (removesCode(i)) return { kind: 'trash', label: `Je jette du code de ${file}` };
+      return { kind: 'write', label: `Je modifie ${file}` };
+    }
     case 'Bash':
     case 'PowerShell': {
       const cmd = typeof i.command === 'string' ? i.command.split('\n')[0] : '';
+      const target = deletedTarget(cmd);
+      if (target !== undefined) return { kind: 'trash', label: `Je jette ${target || 'des fichiers'}`, detail: str(i.description, 80) };
       return { kind: 'bash', label: `$ ${cleanText(cmd, 56, false)}`, detail: str(i.description, 80) };
     }
     case 'WebSearch':

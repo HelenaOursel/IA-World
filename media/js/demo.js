@@ -34,6 +34,7 @@ const SCRIPT = [
   [1.5, act('demo-test', 'write', 'J’écris darkMode.test.ts')],
   [2.0, act('demo-explore', 'read', 'Je lis Button.tsx')],
   [1.5, act('main', 'write', 'Je modifie App.tsx')],
+  [2.2, act('main', 'trash', 'Je jette ancien-theme.css')],
   [1.8, act('demo-explore', 'talk', '6 composants utilisent des couleurs en dur.')],
   [2.4, ev({ type: 'turnEnd', agentId: 'demo-explore' })],
   [1.0, ev({ type: 'despawn', id: 'demo-explore' })],

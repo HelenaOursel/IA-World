@@ -1,6 +1,7 @@
 // Décor : plate-forme d'usine futuriste flottante, postes de travail et machines.
 import * as THREE from '../vendor/three.module.min.js';
 import { CanvasScreen, cylinder, metal, mesh, neon, roundRect, roundedBox, scanlines, sphere } from './geometry.js';
+import { drawDoodles } from './doodles.js';
 
 const R = 8.4; // rayon de la plate-forme octogonale
 const MARK = '#8fa0bb'; // couleur neutre des marquages au sol
@@ -15,6 +16,7 @@ const LAYOUT = {
   agent: [4.1, 4.2],
   bash: [5.8, 0.5],
   write: [4.4, -3.9],
+  trash: [2.55, 6.2],
 };
 
 export const STATION_COLORS = {
@@ -25,6 +27,7 @@ export const STATION_COLORS = {
   agent: '#9b5de5',
   bash: '#39ff9f',
   write: '#4d8dff',
+  trash: '#7bd88f',
   dock: '#ff7a1a',
 };
 
@@ -36,6 +39,7 @@ export const STATION_NAMES = {
   agent: 'ASSEMBLAGE',
   bash: 'TERMINAL',
   write: 'CODE',
+  trash: 'CORBEILLE',
   dock: 'RECHARGE',
 };
 
@@ -242,12 +246,13 @@ function drawNetwork(ctx, w, h, n) {
   scanlines(ctx, w, h);
 }
 
-function drawBoard(ctx, w, h, todos) {
+function drawBoard(ctx, w, h, todos, doodles) {
   screenFrame(ctx, w, h, STATION_COLORS.plan, '☰ PLAN DE TRAVAIL');
   if (!todos.length) {
     ctx.fillStyle = '#5b6b88';
     ctx.font = 'italic 24px system-ui, sans-serif';
     ctx.fillText('Aucune tâche pour l’instant…', 24, 100);
+    drawDoodles(ctx, doodles);
     scanlines(ctx, w, h);
     return;
   }
@@ -270,6 +275,7 @@ function drawBoard(ctx, w, h, todos) {
     ctx.font = '18px system-ui, sans-serif';
     ctx.fillText(`+ ${todos.length - shown.length} autres`, w - 130, h - 12);
   }
+  drawDoodles(ctx, doodles);
   scanlines(ctx, w, h);
 }
 
@@ -518,9 +524,12 @@ function buildRacks(scene) {
   return racks;
 }
 
+// Le tapis est décalé vers la gauche pour laisser la corbeille au bout de la ligne.
+const CONVEYOR_X = -0.7;
+
 function buildConveyor(scene) {
   const g = new THREE.Group();
-  g.position.set(0, 0, 6.3);
+  g.position.set(CONVEYOR_X, 0, 6.3);
   g.add(mesh(roundedBox(5.6, 0.12, 0.8, 0.03), metal('#2a3140'), 0, 0.42, 0));
   for (const x of [-2.6, -0.9, 0.9, 2.6]) for (const z of [-0.33, 0.33]) g.add(mesh(new THREE.BoxGeometry(0.08, 0.4, 0.08), metal('#1a1f2a'), x, 0.2, z));
   const beltMat = new THREE.MeshStandardMaterial({ color: '#2b3039', roughness: 0.8 });
@@ -575,9 +584,10 @@ function buildSky(scene) {
 function buildPlan(st) {
   const g = st.group;
   st.todos = [];
+  st.doodles = [];
   for (const x of [-1.35, 1.35]) g.add(mesh(roundedBox(0.12, 2.6, 0.12, 0.04), metal('#2a3140'), x, 1.3, -0.1));
   g.add(mesh(roundedBox(2.9, 1.75, 0.08, 0.03), metal('#10141c'), 0, 1.75, -0.1));
-  st.screen = new CanvasScreen(640, 400, (ctx, w, h) => drawBoard(ctx, w, h, st.todos));
+  st.screen = new CanvasScreen(640, 400, (ctx, w, h) => drawBoard(ctx, w, h, st.todos, st.doodles));
   const face = screenMesh(st.screen, 2.75, 1.6);
   face.position.set(0, 1.75, -0.055);
   g.add(face);
@@ -647,6 +657,78 @@ function buildAssembly(st) {
   st.power = 0;
   st.centerLocal = new THREE.Vector3(0, 0.1, 0);
   st.spotDist = 1.45;
+  zoneMarker(st);
+}
+
+function buildTrash(st) {
+  // Le robot se place à côté de la corbeille, côté centre, sans gêner la baie d'assemblage.
+  st.dir.set(-0.55, 0, -0.85).normalize();
+  st.side.set(-st.dir.z, 0, st.dir.x);
+  st.group.rotation.y = Math.atan2(st.dir.x, st.dir.z);
+  const g = st.group;
+  const c = st.color;
+  const SCALE = 0.75;
+  const body = new THREE.Group();
+  body.scale.setScalar(SCALE);
+  g.add(body);
+
+  // Corps légèrement évasé, bord lumineux, intérieur sombre
+  body.add(mesh(cylinder(0.42, 0.34, 0.78, 36), metal('#1d2330'), 0, 0.39, 0));
+  body.add(mesh(cylinder(0.36, 0.36, 0.06, 36), metal('#262d3a'), 0, 0.03, 0));
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.022, 10, 48), neon(c, 1.5));
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 0.78;
+  body.add(rim);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(0.385, 0.012, 8, 48), neon(c, 0.9));
+  band.rotation.x = Math.PI / 2;
+  band.position.y = 0.2;
+  body.add(band);
+  const hole = new THREE.Mesh(new THREE.CircleGeometry(0.4, 36), new THREE.MeshBasicMaterial({ color: '#020306' }));
+  hole.rotation.x = -Math.PI / 2;
+  hole.position.y = 0.772;
+  body.add(hole);
+
+  // Symbole de recyclage, devant et derrière
+  const sc = document.createElement('canvas');
+  sc.width = sc.height = 128;
+  const sg = sc.getContext('2d');
+  sg.fillStyle = c;
+  sg.font = '96px "Segoe UI Symbol", "Noto Sans Symbols", sans-serif';
+  sg.textAlign = 'center';
+  sg.textBaseline = 'middle';
+  sg.fillText('♻', 64, 70);
+  const symTex = new THREE.CanvasTexture(sc);
+  symTex.colorSpace = THREE.SRGBColorSpace;
+  const symMat = new THREE.MeshBasicMaterial({ map: symTex, transparent: true, depthWrite: false });
+  symMat.color.setScalar(1.6);
+  for (const side of [1, -1]) {
+    const sym = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.34), symMat);
+    sym.position.set(0, 0.47, side * 0.392);
+    sym.rotation.set(side * 0.1, side > 0 ? 0 : Math.PI, 0);
+    body.add(sym);
+  }
+
+  // Couvercle articulé à l'arrière
+  const lid = new THREE.Group();
+  lid.position.set(0, 0.8, -0.43);
+  lid.add(mesh(cylinder(0.45, 0.45, 0.05, 36), metal('#2a3140'), 0, 0.025, 0.43));
+  lid.add(mesh(roundedBox(0.16, 0.04, 0.05, 0.015), metal('#3a4150'), 0, 0.07, 0.43));
+  const lidRim = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.012, 8, 48), neon(c, 1.1));
+  lidRim.rotation.x = Math.PI / 2;
+  lidRim.position.set(0, 0.025, 0.43);
+  lid.add(lidRim);
+  body.add(lid);
+
+  const l = label(STATION_NAMES.trash, c);
+  l.position.set(0, 1.2, 0);
+  g.add(l);
+  const light = new THREE.PointLight(c, 1.2, 2.2, 1.8);
+  light.position.set(0, 0.9, 0.4);
+  g.add(light);
+
+  Object.assign(st, { lid, lidTimer: 0, mouthLocal: new THREE.Vector3(0, 0.82 * SCALE, 0), light });
+  st.openLid = (seconds) => (st.lidTimer = Math.max(st.lidTimer, seconds));
+  st.spotDist = 0.95;
   zoneMarker(st);
 }
 
@@ -735,6 +817,7 @@ export function buildWorld(scene) {
 
   buildPlan(stations.plan);
   buildAssembly(stations.agent);
+  buildTrash(stations.trash);
   for (const st of Object.values(stations)) scene.add(st.group);
   stations.dock = new Dock();
   buildDock(stations.dock, scene);
@@ -764,6 +847,11 @@ export function buildWorld(scene) {
       r.scale.setScalar(1 + Math.sin(k * Math.PI) * 0.15);
     });
     dock.light.intensity = 2.8 + Math.sin(t * 3) * 0.5;
+
+    const bin = stations.trash;
+    bin.lidTimer = Math.max(0, bin.lidTimer - dt);
+    const lidGoal = bin.lidTimer > 0 ? -1.25 : 0;
+    bin.lid.rotation.x += (lidGoal - bin.lid.rotation.x) * Math.min(1, dt * (lidGoal ? 14 : 6));
 
     const bay = stations.agent;
     bay.power = Math.max(0, bay.power - dt * 0.35);
