@@ -124,8 +124,8 @@ function resultText(content: any): string {
   return '';
 }
 
-/** Convertit une entrée de transcript en événements. `agentId` vaut 'main' pour la session principale. */
-export function parseEntry(entry: any, agentId: string): WorldEvent[] {
+/** Convertit une entrée de transcript en événements. `isMain` indique le fil principal de la session (pas un sous-agent). */
+export function parseEntry(entry: any, agentId: string, isMain = agentId === 'main'): WorldEvent[] {
   const out: WorldEvent[] = [];
   const content = entry?.message?.content;
 
@@ -167,20 +167,20 @@ export function parseEntry(entry: any, agentId: string): WorldEvent[] {
           promptText += ' ' + b.text;
         }
       }
-      if (promptText) pushPrompt(out, promptText, agentId);
+      if (promptText) pushPrompt(out, promptText, agentId, isMain);
     } else if (typeof content === 'string') {
-      pushPrompt(out, content, agentId);
+      pushPrompt(out, content, agentId, isMain);
     }
   }
   return out;
 }
 
-function pushPrompt(out: WorldEvent[], raw: string, agentId: string): void {
-  if (agentId !== 'main') return;
+function pushPrompt(out: WorldEvent[], raw: string, agentId: string, isMain: boolean): void {
+  if (!isMain) return;
   if (/^\s*\[Request interrupted/i.test(raw)) {
     out.push({ type: 'error', agentId, text: "Interrompu par l'utilisateur" });
     return;
   }
   const text = cleanText(raw, 160);
-  if (text) out.push({ type: 'prompt', text });
+  if (text) out.push({ type: 'prompt', agentId, text });
 }

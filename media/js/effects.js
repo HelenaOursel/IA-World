@@ -1,13 +1,55 @@
-// Effets visuels : étincelles cubiques, ondes néon et paquets de données (prompts).
+// Effets visuels : étincelles cubiques, ondes néon, cœurs, puces et signaux radio (prompts).
 import * as THREE from '../vendor/three.module.min.js';
 import { neon } from './geometry.js';
+
+let heartTex;
+function heartTexture() {
+  if (heartTex) return heartTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#ff5fa2';
+  g.shadowColor = '#ff8cc0';
+  g.shadowBlur = 8;
+  g.beginPath();
+  g.moveTo(32, 22);
+  g.bezierCurveTo(32, 12, 14, 10, 12, 24);
+  g.bezierCurveTo(10, 38, 26, 46, 32, 54);
+  g.bezierCurveTo(38, 46, 54, 38, 52, 24);
+  g.bezierCurveTo(50, 10, 32, 12, 32, 22);
+  g.fill();
+  heartTex = new THREE.CanvasTexture(c);
+  heartTex.colorSpace = THREE.SRGBColorSpace;
+  return heartTex;
+}
+
+/** Petite puce électronique : circuit vert, broches dorées, cœur lumineux. */
+function buildChip() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.26), new THREE.MeshStandardMaterial({ color: '#1d7a4b', roughness: 0.5 })));
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.14), new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.3, metalness: 0.4 })));
+  const gold = new THREE.MeshStandardMaterial({ color: '#ffcf5a', metalness: 0.9, roughness: 0.25 });
+  for (let i = 0; i < 4; i++) {
+    for (const side of [-1, 1]) {
+      const a = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.05), gold);
+      a.position.set(-0.075 + i * 0.05, 0, side * 0.14);
+      g.add(a);
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), gold);
+      b.position.set(side * 0.14, 0, -0.075 + i * 0.05);
+      g.add(b);
+    }
+  }
+  const core = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.045, 0.05), neon('#3ddc97', 2.5));
+  g.add(core);
+  return g;
+}
 
 export class Effects {
   constructor(scene) {
     this.scene = scene;
     this.particles = [];
     this.rings = [];
-    this.packets = [];
+    this.signals = [];
     const geo = new THREE.BoxGeometry(1, 1, 1);
     for (let i = 0; i < 240; i++) {
       const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, depthWrite: false }));
@@ -15,6 +57,41 @@ export class Effects {
       scene.add(m);
       this.particles.push({ m, v: new THREE.Vector3(), spin: new THREE.Vector3(), life: 0, max: 1, size: 0.05, gravity: 0, glow: 1, alive: false });
     }
+
+    this.hearts = [];
+    const heartMat = new THREE.SpriteMaterial({ map: heartTexture(), transparent: true, depthWrite: false });
+    for (let i = 0; i < 40; i++) {
+      const s = new THREE.Sprite(heartMat.clone());
+      s.visible = false;
+      scene.add(s);
+      this.hearts.push({ s, life: 0, max: 1, phase: 0, x: 0, z: 0, alive: false });
+    }
+    this.chips = [];
+  }
+
+  /** Petits cœurs qui s'envolent en se dandinant. */
+  heart(pos, count = 1) {
+    let n = 0;
+    for (const h of this.hearts) {
+      if (h.alive) continue;
+      h.alive = true;
+      h.life = 0;
+      h.max = 1.1 + Math.random() * 0.5;
+      h.phase = Math.random() * 6;
+      h.x = pos.x + (Math.random() - 0.5) * 0.4;
+      h.z = pos.z + (Math.random() - 0.5) * 0.4;
+      h.y = pos.y + Math.random() * 0.1;
+      h.s.visible = true;
+      if (++n >= count) break;
+    }
+  }
+
+  /** Puce électronique qui vole jusqu'au robot puis disparaît dedans. `target()` donne sa position actuelle. */
+  chip(from, target, onCatch, onArrive) {
+    const g = buildChip();
+    g.position.copy(from);
+    this.scene.add(g);
+    this.chips.push({ g, t: 0, from: from.clone(), target, onCatch, onArrive, caught: false });
   }
 
   /** Projette des petits cubes depuis `pos`. glow > 1 les fait briller. */
@@ -53,22 +130,15 @@ export class Effects {
     this.rings.push({ m, t: 0, from, to, life, opacity });
   }
 
-  /** Paquet de données qui descend du ciel dans un faisceau jusqu'à `target`. */
-  packet(target, onArrive) {
-    const g = new THREE.Group();
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.26), new THREE.MeshStandardMaterial({ color: '#0d1424', metalness: 0.5, roughness: 0.3 }));
-    g.add(cube);
-    g.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(0.27, 0.27, 0.27)), new THREE.LineBasicMaterial({ color: new THREE.Color('#7df9ff').multiplyScalar(3) })));
-    const core = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), neon('#7df9ff', 3));
-    g.add(core);
-    const end = target.clone().add(new THREE.Vector3(0, 2.1, 0));
-    g.position.set(end.x, 9, end.z);
-    this.scene.add(g);
-
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1, 12, 1, true), neon('#7df9ff', 1.6, { transparent: true, opacity: 0.35, depthWrite: false }));
-    this.scene.add(beam);
-    this.packets.push({ g, beam, t: 0, from: g.position.clone(), target: end, onArrive });
-    return g;
+  /** Signal radio : des ondes convergent vers `target()` (la pointe d'une antenne), puis `onArrive`. */
+  signal(target, onArrive) {
+    const rings = [0, 1, 2].map(() => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 8, 48), neon('#7df9ff', 2.2, { transparent: true, opacity: 0, depthWrite: false }));
+      m.rotation.x = Math.PI / 2;
+      this.scene.add(m);
+      return m;
+    });
+    this.signals.push({ rings, t: 0, target, onArrive });
   }
 
   update(dt) {
@@ -103,31 +173,64 @@ export class Effects {
       return true;
     });
 
-    this.packets = this.packets.filter((l) => {
-      l.t += dt;
-      const x = Math.min(1, l.t / 1.8);
-      const e = 1 - Math.pow(1 - x, 3);
-      l.g.position.lerpVectors(l.from, l.target, e);
-      l.g.rotation.set(l.t * 2, l.t * 3, 0);
-      const top = 10, bottom = l.g.position.y;
-      l.beam.position.set(l.g.position.x, (top + bottom) / 2, l.g.position.z);
-      l.beam.scale.set(1, top - bottom, 1);
-      if (x >= 1 && !l.done) {
-        l.done = true;
-        l.hold = 1.4;
+    for (const h of this.hearts) {
+      if (!h.alive) continue;
+      h.life += dt;
+      const x = h.life / h.max;
+      if (x >= 1) {
+        h.alive = false;
+        h.s.visible = false;
+        continue;
       }
-      if (l.done) {
-        l.hold -= dt;
-        l.g.position.y = l.target.y + Math.sin(l.t * 3) * 0.05;
-        l.beam.material.opacity = Math.max(0, l.hold / 1.4) * 0.35;
-        if (l.hold <= 0) {
-          this.burst(l.g.position, { count: 22, colors: ['#7df9ff', '#ffffff', '#4cc9f0'], speed: 1.3, up: 1, life: 0.8, gravity: -1, size: 0.05 });
-          this.scene.remove(l.g, l.beam);
-          l.onArrive?.();
+      h.s.position.set(h.x + Math.sin(h.life * 5 + h.phase) * 0.08, h.y + h.life * 0.7, h.z);
+      h.s.scale.setScalar(0.16 * Math.min(1, x * 5) * (1 - x * 0.3));
+      h.s.material.opacity = 1 - x * x;
+    }
+
+    this.chips = this.chips.filter((c) => {
+      c.t += dt;
+      const end = c.target();
+      // Vol en arc avec tournoiement, puis absorption dans le robot
+      const x = Math.min(1, c.t / 1.1);
+      const e = 1 - Math.pow(1 - x, 2);
+      c.g.position.lerpVectors(c.from, end, e);
+      c.g.position.y += Math.sin(x * Math.PI) * 0.8;
+      c.g.rotation.set(c.t * 4, c.t * 6, 0);
+      if (x > 0.6 && !c.caught) {
+        c.caught = true;
+        c.onCatch?.();
+      }
+      if (x >= 1) {
+        const k = Math.min(1, (c.t - 1.1) / 0.3);
+        c.g.scale.setScalar(Math.max(0.01, 1 - k));
+        if (k >= 1) {
+          this.burst(end, { count: 26, colors: ['#3ddc97', '#ffd54f', '#ffffff'], speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
+          this.scene.remove(c.g);
+          c.onArrive?.();
           return false;
         }
       }
       return true;
+    });
+
+    this.signals = this.signals.filter((sg) => {
+      sg.t += dt;
+      const pos = sg.target();
+      sg.rings.forEach((m, i) => {
+        const x = THREE.MathUtils.clamp((sg.t - i * 0.22) / 0.6, 0, 1);
+        m.position.copy(pos);
+        m.scale.setScalar(Math.max(0.02, 1.4 * (1 - x)));
+        m.material.opacity = x > 0 && x < 1 ? Math.sin(x * Math.PI) * 0.9 : 0;
+      });
+      if (sg.t < 0.22 * 2 + 0.6) return true;
+      for (const m of sg.rings) {
+        this.scene.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      }
+      this.burst(pos, { count: 16, colors: ['#7df9ff', '#ffffff'], speed: 1, up: 1.2, life: 0.6, gravity: -1, size: 0.03 });
+      sg.onArrive?.();
+      return false;
     });
   }
 }

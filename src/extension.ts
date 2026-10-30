@@ -104,8 +104,8 @@ class WorldPanel {
 }
 
 function updateStatus(): void {
-  const n = watcher.activeAgentCount;
-  statusItem.text = watcher.isLive ? `$(globe) IA World · ${n ? `${n + 1} actifs` : 'en direct'}` : '$(globe) IA World';
+  const robots = watcher.sessionCount + watcher.activeAgentCount;
+  statusItem.text = watcher.isLive ? `$(globe) IA World · ${robots > 1 ? `${robots} robots` : 'en direct'}` : '$(globe) IA World';
   statusItem.tooltip = watcher.isLive ? 'Claude travaille — ouvrir le monde' : 'Ouvrir le monde de Claude';
 }
 
@@ -119,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   watcher.on('event', (ev: WorldEvent) => {
     WorldPanel.current?.post({ type: 'event', event: ev });
-    if (ev.type === 'status' || ev.type === 'spawn' || ev.type === 'despawn') updateStatus();
+    if (['status', 'spawn', 'despawn', 'sessionStart', 'sessionEnd'].includes(ev.type)) updateStatus();
     if (ev.type === 'status' && ev.live && !WorldPanel.current && vscode.workspace.getConfiguration('iaworld').get('autoOpen')) {
       WorldPanel.show(context, true);
     }
@@ -128,7 +128,6 @@ export function activate(context: vscode.ExtensionContext): void {
     WorldPanel.current?.post({ type: 'session', snapshot });
     updateStatus();
   });
-  watcher.on('title', (title: string) => WorldPanel.current?.post({ type: 'title', title }));
   watcher.start();
 
   context.subscriptions.push(
@@ -139,7 +138,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('iaworld.pickSession', async () => {
       const sessions = watcher.listSessions();
       const items: (vscode.QuickPickItem & { file?: string })[] = [
-        { label: '$(sync) Automatique', description: 'Suivre la session la plus récente' },
+        { label: '$(sync) Automatique', description: 'Suivre toutes les sessions actives' },
         ...sessions.map((s) => ({
           label: s.title || path.basename(s.file, '.jsonl'),
           description: s.project,

@@ -531,7 +531,7 @@ function buildConveyor(scene) {
   for (let i = 0; i < 5; i++) {
     const c = new THREE.Group();
     c.add(mesh(roundedBox(0.4, 0.34, 0.4, 0.03), metal('#343c4c')));
-    c.add(mesh(new THREE.BoxGeometry(0.41, 0.03, 0.41), neon(MARK, 0.6)));
+    c.add(mesh(new THREE.BoxGeometry(0.41, 0.03, 0.41), neon(['#4cc9f0', '#ff7a1a', '#9b5de5', '#3ddc97', '#ffc53d'][i], 0.9)));
     c.userData.x = -2.6 + i * 1.1;
     g.add(c);
     crates.push(c);

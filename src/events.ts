@@ -23,10 +23,14 @@ export interface AgentInfo {
   id: string;
   name: string;
   agentType: string;
+  /** Robot Claude (session) qui a lancé cet agent. */
+  ownerId?: string;
 }
 
 export interface SessionInfo {
   id: string;
+  /** Identifiant du robot Claude de cette session dans le monde. */
+  mainId: string;
   file: string;
   title: string;
   project: string;
@@ -34,17 +38,22 @@ export interface SessionInfo {
 
 export type WorldEvent =
   | { type: 'activity'; agentId: string; kind: ActivityKind; label: string; detail?: string; tool?: string }
-  | { type: 'prompt'; text: string }
+  | { type: 'prompt'; agentId: string; text: string }
   | { type: 'error'; agentId: string; text: string }
   | { type: 'turnEnd'; agentId: string }
   | { type: 'todos'; todos: Todo[] }
   | { type: 'spawn'; agent: AgentInfo }
   | { type: 'despawn'; id: string }
   | { type: 'agentResult'; id: string }
-  | { type: 'status'; live: boolean };
+  | { type: 'status'; live: boolean }
+  | { type: 'sessionStart'; session: SessionInfo }
+  | { type: 'sessionEnd'; mainId: string }
+  | { type: 'title'; mainId: string; title: string };
 
 export interface Snapshot {
+  /** Session la plus récemment active. */
   session: SessionInfo | null;
+  sessions: SessionInfo[];
   agents: AgentInfo[];
   todos: Todo[];
   live: boolean;

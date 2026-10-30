@@ -8,7 +8,7 @@ import { RoomEnvironment } from '../vendor/addons/environments/RoomEnvironment.j
 import { Character } from './character.js';
 import { Demo } from './demo.js';
 import { Effects } from './effects.js';
-import { Hud, KIND_ICONS } from './hud.js';
+import { Hud, KIND_ICONS, plainText } from './hud.js';
 import { buildWorld, docRows, randomCodeRow } from './world.js';
 
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
@@ -26,7 +26,8 @@ const KIND_STATION = {
   other: ['bash', 'type'],
 };
 
-const MAIN_COLOR = '#ff7a1a';
+// Une teinte par session Claude suivie (la première reste orange).
+const MAIN_COLORS = ['#ff7a1a', '#ff4f8b', '#ffd23f', '#ff9e7a', '#f72585'];
 const TYPE_COLORS = { Explore: '#2ec4b6', Plan: '#4361ee', 'general-purpose': '#9b5de5', 'claude-code-guide': '#ffc914' };
 const EXTRA_COLORS = ['#06d6a0', '#ef476f', '#f78c6b', '#118ab2', '#8ac926', '#e0aaff'];
 const IDLE_AFTER_MS = 35_000;
@@ -60,12 +61,13 @@ composer.addPass(new OutputPass());
 
 const chars = new Map();
 const queues = new Map();
-const floatTags = [];
 const stationTimers = { write: 0, bash: 0, web: 0, search: 0, read: 0 };
 let colorIndex = 0;
+let mainCount = 0;
 let followId = null;
 
 const demo = new Demo((msg) => handleMessage(msg, true));
+const sessions = new Map(); // mainId -> SessionInfo
 let hasSession = false;
 
 const hud = new Hud(app, {
@@ -77,6 +79,8 @@ const hud = new Hud(app, {
   resetCamera: () => resetCamera(),
   follow: (id) => setFollow(followId === id ? null : id),
   pickSession: () => post({ type: 'pickSession' }),
+  chipHover: (x, y) => chipHover(x, y),
+  dropChip: (x, y) => dropChip(x, y),
 });
 
 // ----------------------------------------------------------------- caméra
@@ -96,24 +100,53 @@ function setFollow(id) {
   if (id) camGoal.radius = Math.min(camGoal.radius, 11);
 }
 
+// Glisser (clic gauche) : tourner la caméra. Clic court sur un robot : le suivre.
+// Maintenir le clic droit et frotter un robot : le caresser.
 let drag = null;
+let hovered = null;
+let rub = 0;
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  drag = { x: e.clientX, y: e.clientY, moved: 0 };
+  if (e.button !== 0 && e.button !== 2) return;
+  drag = { x: e.clientX, y: e.clientY, moved: 0, pet: e.button === 2, robot: robotAt(e.clientX, e.clientY) };
   renderer.domElement.setPointerCapture(e.pointerId);
+  if (drag.pet) setHovered(drag.robot);
 });
 renderer.domElement.addEventListener('pointermove', (e) => {
   if (!drag) return;
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  drag.moved += Math.abs(dx) + Math.abs(dy);
-  drag.x = e.clientX;
-  drag.y = e.clientY;
-  camGoal.theta -= dx * 0.006;
-  camGoal.phi = THREE.MathUtils.clamp(camGoal.phi - dy * 0.005, 0.35, 1.38);
+  if (!drag.pet) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    drag.moved += Math.abs(dx) + Math.abs(dy);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    camGoal.theta -= dx * 0.006;
+    camGoal.phi = THREE.MathUtils.clamp(camGoal.phi - dy * 0.005, 0.35, 1.38);
+    return;
+  }
+  const ch = robotAt(e.clientX, e.clientY);
+  setHovered(ch);
+  if (!ch) return;
+  rub += Math.abs(e.movementX) + Math.abs(e.movementY);
+  if (rub > 45) {
+    rub = 0;
+    petRobot(ch);
+  }
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (drag && drag.moved < 5) pick(e);
+  if (drag && !drag.pet && e.button === 0 && drag.moved < 5) setFollow(drag.robot ? drag.robot.id : null);
   drag = null;
+  setHovered(null);
 });
+renderer.domElement.addEventListener('pointerleave', () => {
+  if (!drag) setHovered(null);
+});
+
+function setHovered(ch) {
+  if (hovered === ch) return;
+  hovered = ch;
+  rub = 0;
+  renderer.domElement.classList.toggle('pet', !!ch);
+}
 renderer.domElement.addEventListener(
   'wheel',
   (e) => {
@@ -124,17 +157,57 @@ renderer.domElement.addEventListener(
 );
 
 const raycaster = new THREE.Raycaster();
-function pick(e) {
+/** Robot sous un point de l'écran, ou null. */
+function robotAt(x, y) {
   const r = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
   raycaster.setFromCamera(ndc, camera);
-  const hits = raycaster.intersectObjects([...chars.values()].map((c) => c.root), true);
-  for (const h of hits) {
+  const roots = [...chars.values()].filter((c) => !c.leaving).map((c) => c.root);
+  for (const h of raycaster.intersectObjects(roots, true)) {
     for (let o = h.object; o; o = o.parent) {
-      if (o.userData.charId) return setFollow(o.userData.charId);
+      if (o.userData.charId) return chars.get(o.userData.charId) ?? null;
     }
   }
-  setFollow(null);
+  return null;
+}
+
+// ------------------------------------------------------------ interactions
+
+const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz ♥', 'Encore !', 'Ronron…', 'Trop doux !'];
+const GIFT_LINES = ['Une puce ! Merci ♥', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue ♥'];
+const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
+
+function petRobot(ch) {
+  ch.react('pet', 0.8);
+  const now = performance.now();
+  if (now - (ch.lastHeart ?? 0) > 200) {
+    ch.lastHeart = now;
+    effects.heart(ch.topPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.35, 0)));
+  }
+  if (now - (ch.lastPetTalk ?? 0) > 3500) {
+    ch.lastPetTalk = now;
+    hud.say(ch.id, pickLine(PET_LINES), 'speech', '♥', 2.2, false);
+  }
+}
+
+/** Le robot sous la puce tend les bras pour l'attraper. */
+function chipHover(x, y) {
+  const ch = robotAt(x, y);
+  if (ch && ch.reaction?.type !== 'love') ch.react('catch', 0.35);
+}
+
+function dropChip(x, y) {
+  const ch = robotAt(x, y);
+  if (!ch) return false;
+  const target = () => ch.root.localToWorld(new THREE.Vector3(0, ch.bodyY, ch.size * 0.3));
+  ch.react('catch', 1.3);
+  effects.chip(target().lerp(camera.position, 0.22), target, null, () => {
+    ch.react('love', 2.4);
+    effects.heart(ch.topPosition(new THREE.Vector3()), 6);
+    hud.say(ch.id, pickLine(GIFT_LINES), 'speech', '♥', 3, false);
+    hud.addLog('♥', 'Toi', '#7df9ff', `donne une puce à ${ch.name}`, ch.id);
+  });
+  return true;
 }
 
 function resize() {
@@ -154,17 +227,43 @@ function colorFor(agentType) {
   return TYPE_COLORS[agentType] || EXTRA_COLORS[colorIndex++ % EXTRA_COLORS.length];
 }
 
-function ensureMain() {
-  if (chars.has('main')) return chars.get('main');
-  const ch = new Character({ id: 'main', name: 'Claude', color: MAIN_COLOR, isMain: true });
+const isMainId = (id) => id === 'main' || id.startsWith('main:');
+
+/** Robot Claude d'une session (créé s'il n'existe pas encore). */
+function ensureMain(id = 'main', title = '', animated = false) {
+  if (chars.has(id)) return chars.get(id);
+  const n = mainCount++;
+  const ch = new Character({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true });
   addCharacter(ch);
-  const spot = st.dock.claim('main');
+  const spot = st.dock.claim(id);
   ch.stationKey = 'dock';
   ch.setPosition(spot.pos);
   ch.root.rotation.y = spot.face;
   ch.face = spot.face;
   ch.idle = true;
+  ch.setAction('sleep');
+  if (animated) {
+    ch.appear();
+    effects.burst(ch.topPosition(new THREE.Vector3()), { count: 20, colors: [ch.color, '#ffffff'], speed: 1.2, up: 1.5, life: 0.9, gravity: -2 });
+  }
   return ch;
+}
+
+/** Fait disparaître le robot d'une session terminée et ses agents. */
+function endSession(mainId) {
+  for (const ch of [...chars.values()]) {
+    if (ch.id !== mainId && ch.ownerId !== mainId) continue;
+    if (ch.vanishing) continue;
+    ch.leaving = ch.vanishing = true;
+    effects.burst(ch.topPosition(new THREE.Vector3()), { count: 16, colors: [ch.color, '#ffffff'], speed: 1, up: 1.2, life: 0.8, gravity: -1.5 });
+    ch.vanish(() => removeCharacter(ch));
+  }
+}
+
+function primaryTitle(s) {
+  const n = s?.sessions?.length ?? 0;
+  const title = s?.session ? s.session.title || s.session.project : 'En attente de Claude…';
+  return n > 1 ? `${n} sessions · ${title}` : title;
 }
 
 function addCharacter(ch) {
@@ -182,6 +281,7 @@ function bayCenter() {
 function spawnAgent(info, animated = true) {
   if (chars.has(info.id)) return chars.get(info.id);
   const ch = new Character({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType) });
+  ch.ownerId = info.ownerId;
   addCharacter(ch);
   if (animated) {
     const p = bayCenter();
@@ -192,7 +292,7 @@ function spawnAgent(info, animated = true) {
     effects.burst(p.clone().setY(0.8), { count: 30, colors: ['#b388ff', '#ffffff', '#e0aaff', ch.color], speed: 1.6, up: 2, life: 1.1, gravity: -2 });
     effects.ring(p.clone().setY(0.12), { color: '#b388ff', from: 0.4, to: 1.8, life: 0.9 });
     hud.say(ch.id, 'Unité en ligne !', 'speech', KIND_ICONS.spawn, 3);
-    hud.addLog(KIND_ICONS.spawn, ch.name, ch.color, `assemblé (${info.agentType})`);
+    hud.addLog(KIND_ICONS.spawn, ch.name, ch.color, `assemblé (${info.agentType})`, ch.id);
     moveTo(ch, 'dock', 'idle');
   } else {
     const spot = st.dock.claim(ch.id);
@@ -211,7 +311,7 @@ function despawnAgent(id, animated = true) {
   ch.leaving = true;
   if (!animated) return removeCharacter(ch);
   hud.say(id, 'Mission terminée !', 'speech', KIND_ICONS.despawn, 3);
-  hud.addLog(KIND_ICONS.despawn, ch.name, ch.color, 'retourne à la baie');
+  hud.addLog(KIND_ICONS.despawn, ch.name, ch.color, 'retourne à la baie', ch.id);
   moveTo(ch, 'agent', 'idle');
 }
 
@@ -235,8 +335,8 @@ function moveTo(ch, key, action) {
 
 function goIdle(ch) {
   ch.idle = true;
-  moveTo(ch, 'dock', 'idle');
-  hud.setActivityText(ch.id, '⚡ En recharge');
+  moveTo(ch, 'dock', 'sleep');
+  hud.setActivityText(ch.id, '↯ En recharge');
 }
 
 function shorten(s, n) {
@@ -284,7 +384,7 @@ function logEvent(ch, icon, text, kind) {
   const key = ch.id + kind + text;
   if (key === lastLog) return;
   lastLog = key;
-  hud.addLog(icon, ch.isMain ? 'Claude' : ch.name, ch.color, text);
+  hud.addLog(icon, ch.name, ch.color, text, ch.id);
 }
 
 function stationEffect(key, ev) {
@@ -344,23 +444,20 @@ function onTurnEnd(ch) {
   if (ch.isMain) ch.idleAt = performance.now() + 2600;
 }
 
-function onPrompt(text) {
-  const main = ensureMain();
-  const tag = hud.floating('', 'user');
-  tag.append(
-    Object.assign(document.createElement('span'), { className: 'icon', textContent: KIND_ICONS.prompt }),
-    Object.assign(document.createElement('span'), { textContent: text }),
-  );
-  const packet = effects.packet(main.root.position, () => {
-    tag.remove();
-    floatTags.splice(floatTags.findIndex((f) => f.node === tag), 1);
-    main.react('surprise', 0.8);
-  });
-  floatTags.push({ node: tag, pos: packet.position, offset: new THREE.Vector3(0, 0.35, 0) });
+function onPrompt(text, id) {
+  const main = ensureMain(id);
   main.idle = false;
   main.lastEventAt = performance.now();
-  main.react('wave', 1.6);
-  hud.addLog(KIND_ICONS.prompt, 'Toi', '#7df9ff', text);
+  // Le prompt arrive comme un signal radio capté par l'antenne du robot.
+  effects.signal(
+    () => main.antennaTip(new THREE.Vector3()),
+    () => {
+      main.receiveSignal();
+      main.react('surprise', 0.8);
+      hud.say(main.id, plainText(text), 'user', KIND_ICONS.prompt, THREE.MathUtils.clamp(3 + text.length / 14, 5, 12), false);
+    },
+  );
+  hud.addLog(KIND_ICONS.prompt, 'Toi', '#7df9ff', text, main.id);
 }
 
 // ------------------------------------------------------- file d'attente
@@ -373,7 +470,7 @@ function enqueue(agentId, ev) {
 function minDuration(ev, backlog) {
   if (backlog > 6) return 0.25;
   if (backlog > 3) return 0.6;
-  if (ev.type === 'prompt') return 2.2;
+  if (ev.type === 'prompt') return 3.6;
   if (ev.type === 'activity') return ev.kind === 'think' ? 0.8 : ev.kind === 'talk' ? 2 : 1.3;
   return 0.8;
 }
@@ -391,7 +488,7 @@ function processQueues(now) {
     if (ev.type === 'activity') applyActivity(ch, ev);
     else if (ev.type === 'error') onError(ch, ev.text);
     else if (ev.type === 'turnEnd') onTurnEnd(ch);
-    else if (ev.type === 'prompt') onPrompt(ev.text);
+    else if (ev.type === 'prompt') onPrompt(ev.text, id);
     else if (ev.type === 'despawn') despawnAgent(id);
   }
 }
@@ -400,18 +497,21 @@ function processQueues(now) {
 
 function handleMessage(msg, fromDemo = false) {
   if (!msg) return;
-  if (demo.running && !fromDemo && msg.type === 'event' && msg.event.type !== 'status') stopDemo();
+  if (demo.running && !fromDemo) {
+    if (msg.type === 'session' || msg.type === 'snapshot') stopDemo(false);
+    else if (msg.type === 'event' && msg.event.type !== 'status') stopDemo();
+  }
 
   switch (msg.type) {
     case 'snapshot':
     case 'session':
       applySnapshot(msg.snapshot, msg.type === 'session');
       break;
-    case 'title':
-      hud.setSession(msg.title, true);
-      break;
     case 'demo':
       startDemo();
+      break;
+    case 'title':
+      hud.setSession(msg.title, true);
       break;
     case 'event':
       handleEvent(msg.event);
@@ -424,14 +524,33 @@ function handleEvent(ev) {
     case 'activity':
     case 'error':
     case 'turnEnd':
-      if (ev.agentId === 'main') ensureMain();
+      if (isMainId(ev.agentId)) ensureMain(ev.agentId);
       else if (!chars.has(ev.agentId)) spawnAgent({ id: ev.agentId, name: 'Agent', agentType: 'agent' });
       enqueue(ev.agentId, ev);
       break;
-    case 'prompt':
-      ensureMain();
-      enqueue('main', ev);
+    case 'prompt': {
+      const id = ev.agentId || 'main';
+      ensureMain(id);
+      enqueue(id, ev);
       break;
+    }
+    case 'sessionStart':
+      ensureMain(ev.session.mainId, ev.session.title, true);
+      sessions.set(ev.session.mainId, ev.session);
+      hud.setSession(primaryTitle({ session: ev.session, sessions: [...sessions.values()] }), true);
+      hud.addLog(KIND_ICONS.spawn, 'Session', MAIN_COLORS[0], ev.session.title || 'nouvelle session Claude');
+      break;
+    case 'sessionEnd':
+      sessions.delete(ev.mainId);
+      endSession(ev.mainId);
+      break;
+    case 'title': {
+      const info = sessions.get(ev.mainId);
+      if (info) info.title = ev.title;
+      hud.setCharacterType(ev.mainId, shorten(ev.title, 26));
+      hud.setSession(primaryTitle({ session: info, sessions: [...sessions.values()] }), true);
+      break;
+    }
     case 'todos':
       setTodos(ev.todos);
       break;
@@ -449,22 +568,27 @@ function handleEvent(ev) {
 }
 
 function applySnapshot(s, reset) {
-  for (const ch of [...chars.values()]) if (!ch.isMain) removeCharacter(ch);
+  for (const ch of [...chars.values()]) removeCharacter(ch);
   for (const q of queues.values()) q.items.length = 0;
-  const main = ensureMain();
+  mainCount = 0;
+  sessions.clear();
   hasSession = !!s?.session;
-  hud.setSession(s?.session ? s.session.title || s.session.project : 'En attente de Claude…', !!s?.live);
+  for (const info of s?.sessions ?? []) {
+    sessions.set(info.mainId, info);
+    ensureMain(info.mainId, info.title);
+  }
+  if (!chars.size) ensureMain();
+  hud.setSession(primaryTitle(s), !!s?.live);
   hud.showEmpty(!hasSession && !demo.running);
   if (reset) hud.clearLog();
   setTodos(s?.todos);
   for (const a of s?.agents ?? []) spawnAgent(a, false);
+  for (const ch of chars.values()) if (ch.isMain) goIdle(ch);
   if (s?.live) {
     for (const ev of s.lastActivities ?? []) {
-      const ch = ev.agentId === 'main' ? main : chars.get(ev.agentId);
+      const ch = chars.get(ev.agentId);
       if (ch && ev.type === 'activity') applyActivity(ch, ev, true);
     }
-  } else {
-    goIdle(main);
   }
 }
 
@@ -472,21 +596,25 @@ function startDemo() {
   hud.setDemo(true);
   hud.showEmpty(false);
   hud.clearLog();
-  for (const ch of [...chars.values()]) if (!ch.isMain) removeCharacter(ch);
+  for (const ch of [...chars.values()]) removeCharacter(ch);
+  mainCount = 0;
+  ensureMain();
   setTodos([]);
   demo.start();
 }
 
-function stopDemo() {
+/** Arrête la démo et vide le monde ; l'état réel est ensuite redemandé à l'extension. */
+function stopDemo(requestSnapshot = true) {
   demo.stop();
   hud.setDemo(false);
-  for (const ch of [...chars.values()]) if (ch.id.startsWith('demo-')) removeCharacter(ch);
+  for (const ch of [...chars.values()]) removeCharacter(ch);
   for (const q of queues.values()) q.items.length = 0;
+  mainCount = 0;
   setTodos([]);
   hud.setLive(false);
   hud.showEmpty(!hasSession);
-  goIdle(ensureMain());
-  post({ type: 'ready' });
+  if (vscode && requestSnapshot) post({ type: 'ready' });
+  else if (!vscode) goIdle(ensureMain());
 }
 
 window.addEventListener('message', (e) => handleMessage(e.data));
@@ -561,6 +689,7 @@ function updateCharacters(now, dt, t) {
       ch.face = Math.atan2(camera.position.x - ch.root.position.x, camera.position.z - ch.root.position.z);
     }
     ch.update(dt, t);
+    if (ch.reaction?.type === 'love' && Math.random() < dt * 7) effects.heart(ch.topPosition(tmp).add(new THREE.Vector3(0, -0.3, 0)));
 
     if (ch.leaving && !ch.moving && !ch.vanishing) {
       if (!ch.inBay) {
@@ -591,7 +720,7 @@ function updateCharacters(now, dt, t) {
         ch.goTo({ pos: new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), face: a + Math.PI }, 'idle');
         ch.wandering = true;
       } else if (ch.wandering && Math.random() < dt * 0.12) {
-        moveTo(ch, 'dock', 'idle');
+        moveTo(ch, 'dock', 'sleep');
       }
     }
   }
@@ -628,12 +757,7 @@ function frame() {
   effects.update(dt);
   updateCamera(dt);
   composer.render();
-  hud.update(
-    camera,
-    app.clientWidth,
-    app.clientHeight,
-    floatTags.map((f) => ({ node: f.node, pos: f.pos.clone().add(f.offset) })),
-  );
+  hud.update(camera, app.clientWidth, app.clientHeight);
 }
 
 ensureMain();
