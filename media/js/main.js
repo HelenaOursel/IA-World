@@ -173,8 +173,8 @@ function robotAt(x, y) {
 
 // ------------------------------------------------------------ interactions
 
-const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz ♥', 'Encore !', 'Ronron…', 'Trop doux !'];
-const GIFT_LINES = ['Une puce ! Merci ♥', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue ♥'];
+const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz <3', 'Encore !', 'Ronron…', 'Trop doux !'];
+const GIFT_LINES = ['Une puce ! Merci <3', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue <3'];
 const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
 function petRobot(ch) {
@@ -186,7 +186,7 @@ function petRobot(ch) {
   }
   if (now - (ch.lastPetTalk ?? 0) > 3500) {
     ch.lastPetTalk = now;
-    hud.say(ch.id, pickLine(PET_LINES), 'speech', '♥', 2.2, false);
+    hud.say(ch.id, pickLine(PET_LINES), 'speech', KIND_ICONS.love, 2.2, false);
   }
 }
 
@@ -204,8 +204,8 @@ function dropChip(x, y) {
   effects.chip(target().lerp(camera.position, 0.22), target, null, () => {
     ch.react('love', 2.4);
     effects.heart(ch.topPosition(new THREE.Vector3()), 6);
-    hud.say(ch.id, pickLine(GIFT_LINES), 'speech', '♥', 3, false);
-    hud.addLog('♥', 'Toi', '#7df9ff', `donne une puce à ${ch.name}`, ch.id);
+    hud.say(ch.id, pickLine(GIFT_LINES), 'speech', KIND_ICONS.love, 3, false);
+    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `donne une puce à ${ch.name}`, ch.id);
   });
   return true;
 }
@@ -263,7 +263,7 @@ function endSession(mainId) {
 function primaryTitle(s) {
   const n = s?.sessions?.length ?? 0;
   const title = s?.session ? s.session.title || s.session.project : 'En attente de Claude…';
-  return n > 1 ? `${n} sessions · ${title}` : title;
+  return n > 1 ? `${n} sessions - ${title}` : title;
 }
 
 function addCharacter(ch) {
@@ -336,7 +336,7 @@ function moveTo(ch, key, action) {
 function goIdle(ch) {
   ch.idle = true;
   moveTo(ch, 'dock', 'sleep');
-  hud.setActivityText(ch.id, '↯ En recharge');
+  hud.setActivityText(ch.id, 'zZz En recharge');
 }
 
 function shorten(s, n) {
@@ -430,7 +430,7 @@ function onError(ch, text) {
   effects.smoke(p.clone().setY(p.y - 0.4));
   if (ch.stationKey === 'bash') {
     st.bash.pendingOk = 0;
-    st.bash.lines.push({ t: '✗ ' + text, c: '#ff4d6d' });
+    st.bash.lines.push({ t: 'x ' + text, c: '#ff4d6d' });
     st.bash.screen.redraw();
   }
   logEvent(ch, KIND_ICONS.error, text, 'error');
@@ -669,7 +669,7 @@ function updateStations(dt) {
   if (bash.pendingOk > 0) {
     bash.pendingOk -= dt;
     if (bash.pendingOk <= 0) {
-      bash.lines.push({ t: '✓ terminé', c: '#a7f3d0' });
+      bash.lines.push({ t: 'ok terminé', c: '#a7f3d0' });
       if (bash.lines.length > 40) bash.lines.splice(0, bash.lines.length - 40);
       bash.screen.redraw();
     }

@@ -12,7 +12,7 @@ const step = (todos, done, doing) => todos.map((t, i) => ({ ...t, status: i < do
 
 // [délai avant le message (s), message]
 const SCRIPT = [
-  [0.3, { type: 'title', title: 'Démo · Mode sombre' }],
+  [0.3, { type: 'title', title: 'Démo - Mode sombre' }],
   [0.4, ev({ type: 'prompt', text: 'Ajoute un mode sombre à l’application, avec un réglage dans la barre du haut.' })],
   [3.2, act('main', 'think', 'Je réfléchis…')],
   [2.0, act('main', 'talk', 'Je vais d’abord regarder comment les styles sont organisés.')],
@@ -20,7 +20,7 @@ const SCRIPT = [
   [3.0, act('main', 'read', 'Je lis App.tsx')],
   [2.8, act('main', 'read', 'Je lis styles.css')],
   [2.6, act('main', 'ask', 'Tu préfères un bouton ou un interrupteur ?')],
-  [4.2, ev({ type: 'prompt', text: 'Un interrupteur, s’il te plaît 🙂' })],
+  [4.2, ev({ type: 'prompt', text: 'Un interrupteur, s’il te plaît :)' })],
   [3.2, act('main', 'plan', 'Je planifie (4 tâches)')],
   [0.4, ev({ type: 'todos', todos: TODOS_1 })],
   [2.8, act('main', 'agent', 'J’envoie un agent : Trouver les composants colorés')],
@@ -40,11 +40,11 @@ const SCRIPT = [
   [0.8, ev({ type: 'todos', todos: step(TODOS_1, 1, 1) })],
   [1.4, act('main', 'write', 'Je modifie Header.tsx')],
   [2.6, act('main', 'bash', '$ npm test', 'Lancer les tests')],
-  [2.6, ev({ type: 'error', agentId: 'main', text: '1 test échoué : Header › bascule le thème' })],
+  [2.6, ev({ type: 'error', agentId: 'main', text: '1 test échoué : Header > bascule le thème' })],
   [2.0, act('main', 'think', 'Je réfléchis…')],
   [1.6, act('main', 'write', 'Je modifie Header.tsx')],
   [2.4, act('main', 'bash', '$ npm test', 'Relancer les tests')],
-  [1.4, act('demo-test', 'talk', 'Tous les tests passent ✓')],
+  [1.4, act('demo-test', 'talk', 'Tous les tests passent !')],
   [1.6, ev({ type: 'turnEnd', agentId: 'demo-test' })],
   [0.8, ev({ type: 'despawn', id: 'demo-test' })],
   [1.2, ev({ type: 'todos', todos: step(TODOS_1, 3, 3) })],

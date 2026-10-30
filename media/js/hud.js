@@ -1,23 +1,25 @@
 // Interface en surimpression : bulles de dialogue, liste des agents, journal.
 import * as THREE from '../vendor/three.module.min.js';
 
+// Icônes des messages : uniquement des caractères tapables au clavier.
 export const KIND_ICONS = {
-  read: '▤',
-  search: '◎',
-  write: '✎',
-  bash: '❯',
-  web: '⌁',
-  plan: '☰',
-  agent: '◈',
+  read: '=',
+  search: '/',
+  write: '*',
+  bash: '$',
+  web: '@',
+  plan: '#',
+  agent: '&',
   ask: '?',
-  think: '∴',
-  talk: '›',
-  other: '⚙',
-  prompt: '✉',
-  error: '⚠',
-  done: '✓',
+  think: '..',
+  talk: '>',
+  other: '%',
+  prompt: '<',
+  error: '!',
+  done: 'ok',
   spawn: '+',
-  despawn: '−',
+  despawn: '-',
+  love: '<3',
 };
 
 // Émojis couleur (présentation emoji par défaut ou forcée par FE0F), avec modificateurs et séquences ZWJ.
@@ -47,20 +49,35 @@ const EMOTES = Object.fromEntries(
   ].flatMap(([emote, chars]) => [...chars].map((c) => [c, emote])),
 );
 
-/** Remplace les émojis par des émoticônes écrites (🙂 → :)) et retire les autres. */
+// Symboles hors clavier les plus courants et leur équivalent tapable.
+const SYMBOLS = {
+  '♥': '<3', '♡': '<3', '☺': ':)', '☹': ':(', '✓': 'ok', '✔': 'ok', '✗': 'x', '✘': 'x',
+  '→': '->', '←': '<-', '⇒': '=>', '↔': '<->', '•': '-', '·': '-', '›': '>', '‹': '<', '−': '-',
+  '×': 'x', '÷': '/', '±': '+/-', '≤': '<=', '≥': '>=', '≠': '!=', '★': '*', '☆': '*',
+};
+// Ce qu'on peut taper sur un clavier classique : ASCII, lettres accentuées, chiffres et ponctuation française.
+const NOT_KEYBOARD = /[^\x20-\x7E\t\n\r\p{L}\p{M}\p{Nd}’‘“”«»…–—¿¡€£°§µ²¨¤\u00A0\u202F]/gu;
+
+/**
+ * Texte d'un message, réduit aux caractères du clavier : émojis → émoticônes (🙂 → :)),
+ * symboles → équivalent tapable (♥ → <3, ✓ → ok), le reste est retiré.
+ */
 export function plainText(s) {
   if (typeof s !== 'string' || !s) return s;
-  const out = s.replace(EMOJI_RE, (m) => {
-    const emote = EMOTES[m.replace(/[\uFE0F\u200D]|\p{Emoji_Modifier}/gu, '')];
-    return emote ? ` ${emote} ` : ' ';
-  });
+  const out = s
+    .replace(EMOJI_RE, (m) => {
+      const emote = EMOTES[m.replace(/[\uFE0F\u200D]|\p{Emoji_Modifier}/gu, '')];
+      return emote ? ` ${emote} ` : ' ';
+    })
+    .replace(/[\uFE0E\uFE0F\u200D]/g, '')
+    .replace(NOT_KEYBOARD, (c) => SYMBOLS[c] ?? (EMOTES[c] ? ` ${EMOTES[c]} ` : ' '));
   return out === s ? s : out.replace(/ {2,}/g, ' ').trim();
 }
 
 function el(tag, cls, parent, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = plainText(text);
+  if (text !== undefined) e.textContent = text;
   parent?.appendChild(e);
   return e;
 }
@@ -188,7 +205,7 @@ export class Hud {
 
   addCharacter(ch) {
     const tag = el('div', 'tag', this.overlay);
-    const name = el('div', 'name', tag, ch.name);
+    const name = el('div', 'name', tag, plainText(ch.name));
     name.style.setProperty('--c', ch.color);
     const bubble = el('div', 'bubble hidden', tag);
     const zzz = el('div', 'zzz hidden', tag);
@@ -200,8 +217,8 @@ export class Hud {
     card.style.setProperty('--c', ch.color);
     const head = el('div', 'agent-head', card);
     el('span', 'dot', head);
-    el('span', 'agent-name', head, ch.name);
-    const type = el('span', 'agent-type', head, ch.agentType);
+    el('span', 'agent-name', head, plainText(ch.name));
+    const type = el('span', 'agent-type', head, plainText(ch.agentType));
     const act = el('div', 'agent-act', card, 'En attente');
     card.addEventListener('click', () => this.handlers.follow(ch.id));
     this.cards.set(ch.id, { card, act, type });
@@ -233,11 +250,11 @@ export class Hud {
     if (!t) return;
     t.bubble.className = 'bubble ' + style;
     t.bubble.textContent = '';
-    if (icon) el('span', 'icon', t.bubble, icon);
-    el('span', 'txt', t.bubble, text);
+    if (icon) el('span', 'icon', t.bubble, plainText(icon));
+    el('span', 'txt', t.bubble, plainText(text));
     t.hideAt = performance.now() + duration * 1000;
     const c = this.cards.get(id);
-    if (c && updateCard) c.act.textContent = (icon ? icon + ' ' : '') + plainText(text);
+    if (c && updateCard) c.act.textContent = (icon ? plainText(icon) + ' ' : '') + plainText(text);
   }
 
   setCharacterType(id, text) {
@@ -290,10 +307,10 @@ export class Hud {
 
   logRow({ icon, who, color, text }) {
     const row = el('div', 'log-row', null);
-    el('span', 'log-icon', row, icon);
-    const w = el('span', 'log-who', row, who);
+    el('span', 'log-icon', row, plainText(icon));
+    const w = el('span', 'log-who', row, plainText(who));
     w.style.color = color;
-    el('span', 'log-text', row, text);
+    el('span', 'log-text', row, plainText(text));
     return row;
   }
 
@@ -347,6 +364,6 @@ export class Hud {
   }
 
   floating(text, cls) {
-    return el('div', 'float-tag ' + cls, this.overlay, text);
+    return el('div', 'float-tag ' + cls, this.overlay, plainText(text));
   }
 }
