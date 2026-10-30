@@ -1,0 +1,84 @@
+{
+  "name": "ia-world",
+  "displayName": "IA World",
+  "description": "Visualise Claude et ses agents en train de coder, dans un petit monde 3D animé.",
+  "version": "0.1.0",
+  "publisher": "oasis-projet",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HelenaOursel/IA-World.git"
+  },
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "ai",
+    "agents",
+    "3d",
+    "visualization"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "iaworld.open",
+        "title": "Ouvrir le monde",
+        "category": "IA World",
+        "icon": "$(globe)"
+      },
+      {
+        "command": "iaworld.demo",
+        "title": "Lancer la démo",
+        "category": "IA World"
+      },
+      {
+        "command": "iaworld.pickSession",
+        "title": "Choisir la session Claude à suivre",
+        "category": "IA World"
+      }
+    ],
+    "configuration": {
+      "title": "IA World",
+      "properties": {
+        "iaworld.claudeDir": {
+          "type": "string",
+          "default": "",
+          "description": "Dossier de configuration Claude (contient projects/). Vide = $CLAUDE_CONFIG_DIR ou ~/.claude."
+        },
+        "iaworld.followAllProjects": {
+          "type": "boolean",
+          "default": false,
+          "description": "Suivre la session Claude la plus récente de n'importe quel projet, pas seulement celle du workspace ouvert."
+        },
+        "iaworld.autoOpen": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ouvrir automatiquement le monde quand une session Claude devient active."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vendor": "node scripts/vendor.js",
+    "compile": "npm run vendor && tsc -p .",
+    "watch": "tsc -watch -p .",
+    "package": "npm run compile && vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.2.1",
+    "three": "0.170.0",
+    "typescript": "^5.6.3"
+  }
+}
