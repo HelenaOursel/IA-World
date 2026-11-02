@@ -40,6 +40,7 @@ export function roundedBox(w, h, d, r = 0.1, seg = 10) {
     nor.setXYZ(i, n.x, n.y, n.z);
   }
   g.computeBoundingSphere();
+  g.userData.shared = true;
   boxCache.set(key, g);
   return g;
 }
@@ -51,6 +52,7 @@ export function mat(color, opts = {}) {
   const key = color + JSON.stringify(opts);
   if (matCache.has(key)) return matCache.get(key);
   const m = new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0, ...opts });
+  m.userData.shared = true;
   matCache.set(key, m);
   return m;
 }
@@ -64,9 +66,20 @@ export function mesh(geo, material, x = 0, y = 0, z = 0) {
   return m;
 }
 
-export const sphere = (r, ws = 28, hs = 18) => new THREE.SphereGeometry(r, ws, hs);
+const shapeCache = new Map();
+// Les ressources partagées sont marquées pour ne pas être libérées avec un personnage.
+function cached(key, make) {
+  if (!shapeCache.has(key)) {
+    const g = make();
+    g.userData.shared = true;
+    shapeCache.set(key, g);
+  }
+  return shapeCache.get(key);
+}
+
+export const sphere = (r, ws = 28, hs = 18) => cached(`s:${r}:${ws}:${hs}`, () => new THREE.SphereGeometry(r, ws, hs));
 export const capsule = (r, len) => new THREE.CapsuleGeometry(r, len, 8, 18);
-export const cylinder = (rt, rb, h, s = 28) => new THREE.CylinderGeometry(rt, rb, h, s);
+export const cylinder = (rt, rb, h, s = 28) => cached(`c:${rt}:${rb}:${h}:${s}`, () => new THREE.CylinderGeometry(rt, rb, h, s));
 
 /** Écran dessiné sur un canvas 2D et affiché comme texture. */
 export class CanvasScreen {

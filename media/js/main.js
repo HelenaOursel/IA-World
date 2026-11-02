@@ -10,12 +10,12 @@ import { Demo } from './demo.js';
 import { eraseDoodle, makeDoodle } from './doodles.js';
 import { Effects } from './effects.js';
 import { Hud, KIND_ICONS, plainText } from './hud.js';
-import { THEMES, getTheme } from './themes.js';
+import { THEME_LIST, loadTheme } from './themes/index.js';
 import { buildWorld, docRows, randomCodeRow } from './world.js';
 
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
 // Thème fourni par l'extension (data-theme), ou par ?theme= hors de VS Code.
-const theme = getTheme(document.body.dataset.theme || new URLSearchParams(location.search).get('theme'));
+const theme = await loadTheme(document.body.dataset.theme || new URLSearchParams(location.search).get('theme'));
 const post = (m) => vscode?.postMessage(m);
 
 // type d'activité -> [poste, animation]
@@ -76,7 +76,7 @@ const sessions = new Map(); // mainId -> SessionInfo
 let hasSession = false;
 
 const hud = new Hud(app, {
-  themes: Object.values(THEMES).map((t) => ({ id: t.id, name: t.name })),
+  themes: THEME_LIST,
   theme: theme.id,
   toggleDemo: () => (demo.running ? stopDemo() : startDemo()),
   toggleRotate: () => {
@@ -421,6 +421,7 @@ function despawnAgent(id, animated = true) {
 function removeCharacter(ch) {
   for (const s of Object.values(st)) s.release(ch.id);
   scene.remove(ch.root);
+  ch.dispose();
   chars.delete(ch.id);
   queues.delete(ch.id);
   hud.removeCharacter(ch.id);

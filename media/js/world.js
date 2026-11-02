@@ -423,40 +423,6 @@ function paintPanels(g, size, k, px, f) {
   }
 }
 
-/** Taches douces (neige, mousse) : `colors` en "r,g,b". */
-function paintBlotches(g, size, colors, count, alpha, rMin, rMax) {
-  for (let i = 0; i < count; i++) {
-    const x = Math.random() * size, y = Math.random() * size, r = rMin + Math.random() * (rMax - rMin);
-    const c = colors[i % colors.length];
-    const grad = g.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, `rgba(${c},${alpha})`);
-    grad.addColorStop(1, `rgba(${c},0)`);
-    g.fillStyle = grad;
-    g.fillRect(x - r, y - r, r * 2, r * 2);
-  }
-}
-
-function paintSnow(g, size) {
-  g.fillStyle = '#d6e6f1';
-  g.fillRect(0, 0, size, size);
-  paintBlotches(g, size, ['245,250,255', '180,210,232', '205,228,244'], 260, 0.5, 40, 160);
-  g.fillStyle = 'rgba(255,255,255,0.9)';
-  for (let i = 0; i < 2200; i++) g.fillRect(Math.random() * size, Math.random() * size, 2, 2);
-}
-
-function paintGoo(g, size) {
-  g.fillStyle = '#1c3624';
-  g.fillRect(0, 0, size, size);
-  paintBlotches(g, size, ['60,120,55', '40,90,45', '90,160,70'], 240, 0.45, 40, 170);
-  g.lineWidth = 3;
-  for (let i = 0; i < 220; i++) {
-    g.strokeStyle = `rgba(181,255,77,${0.08 + Math.random() * 0.18})`;
-    g.beginPath();
-    g.arc(Math.random() * size, Math.random() * size, 4 + Math.random() * 16, 0, Math.PI * 2);
-    g.stroke();
-  }
-}
-
 function floorTexture(theme) {
   const fl = theme.floor ?? {};
   const mark = fl.mark ?? 'rgba(143,160,187,0.16)';
@@ -467,8 +433,7 @@ function floorTexture(theme) {
   const k = size / (2 * R);
   const px = (x, z) => [(x + R) * k, (z + R) * k];
 
-  if (fl.style === 'snow') paintSnow(g, size);
-  else if (fl.style === 'goo') paintGoo(g, size);
+  if (fl.paint) fl.paint(g, size);
   else paintPanels(g, size, k, px, fl);
   // Marquages jaunes en pointillés autour de chaque poste
   g.setLineDash([26, 18]);
@@ -578,8 +543,8 @@ function buildRacks(scene) {
 const CONVEYOR_X = -0.7;
 
 function buildConveyor(scene, theme) {
-  if (theme.conveyor === 'river') return buildRiver(scene);
-  if (theme.conveyor === 'asteroids') return buildAsteroidTrain(scene);
+  // Certains thèmes remplacent le tapis (rivière, train d'astéroïdes)
+  if (theme.conveyor) return theme.conveyor(scene, { x: CONVEYOR_X, z: 6.3, edgeZ: APOTHEM - 0.02 });
   const g = new THREE.Group();
   g.position.set(CONVEYOR_X, 0, 6.3);
   g.add(mesh(roundedBox(5.6, 0.12, 0.8, 0.03), metal('#2a3140'), 0, 0.42, 0));
@@ -606,298 +571,6 @@ function buildConveyor(scene, theme) {
       const edge = Math.min(1, (2.75 - Math.abs(x)) / 0.3);
       c.position.set(x, 0.68, 0);
       c.scale.setScalar(Math.max(0.01, edge));
-    }
-  };
-}
-
-/** Texture d'eau rayée dans le sens du courant (v = sens de l'écoulement). */
-function streakTexture(base, streak, count, foam) {
-  const c = document.createElement('canvas');
-  c.width = 128;
-  c.height = 256;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 128, 256);
-  for (let i = 0; i < count; i++) {
-    ctx.fillStyle = streak.replace('A', (0.15 + Math.random() * 0.4).toFixed(2));
-    ctx.fillRect(Math.random() * 128, Math.random() * 256, 1.5 + Math.random() * 2.5, 14 + Math.random() * 46);
-  }
-  if (foam) {
-    ctx.fillStyle = 'rgba(255,255,255,0.8)';
-    for (let i = 0; i < 26; i++) ctx.fillRect(Math.random() * 128, Math.random() * 256, 2, 5 + Math.random() * 8);
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  return t;
-}
-
-/** Ruban plat qui suit une courbe : u en travers (0 → 1), v le long du courant (en mètres / largeur). */
-function ribbonGeometry(curve, width, steps, y) {
-  const pos = [], uv = [], idx = [];
-  const len = curve.getLength();
-  for (let i = 0; i <= steps; i++) {
-    const s = i / steps;
-    const p = curve.getPointAt(s);
-    const tg = curve.getTangentAt(s);
-    const side = new THREE.Vector3(tg.z, 0, -tg.x).normalize().multiplyScalar(width / 2);
-    pos.push(p.x + side.x, y, p.z + side.z, p.x - side.x, y, p.z - side.z);
-    uv.push(0, (s * len) / width, 1, (s * len) / width);
-    if (i < steps) {
-      const a = i * 2;
-      // Ordre des sommets pour que la face visible regarde vers le haut
-      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
-}
-
-/**
- * Rivière qui coule : elle naît d'un trou dans la glace, serpente à l'avant de la banquise
- * et se jette en cascade dans la mer. Des poissons la remontent et des glaçons dérivent avec le courant.
- */
-function buildRiver(scene) {
-  const g = new THREE.Group();
-  scene.add(g);
-  const W = 0.78;
-  const edgeZ = APOTHEM - 0.02;
-  const curve = new THREE.CatmullRomCurve3([
-    // Part d'un trou dans la glace, loin du poste RÉSEAU, et finit en chute dans la mer.
-    new THREE.Vector3(-1.9, 0, 5.05),
-    new THREE.Vector3(-1.1, 0, 5.95),
-    new THREE.Vector3(0.1, 0, 5.6),
-    new THREE.Vector3(0.95, 0, 6.3),
-    new THREE.Vector3(1.2, 0, 7.1),
-    new THREE.Vector3(1.3, 0, edgeZ),
-  ]);
-  const len = curve.getLength();
-
-  // Deux couches d'eau qui défilent à des vitesses différentes : le courant se voit
-  const deep = streakTexture('#246fb0', 'rgba(140,205,255,A)', 70, false);
-  const foam = streakTexture('rgba(0,0,0,0)', 'rgba(230,248,255,A)', 40, true);
-  const water = new THREE.Mesh(ribbonGeometry(curve, W, 140, 0.025), new THREE.MeshStandardMaterial({ map: deep, roughness: 0.1, metalness: 0.1 }));
-  water.receiveShadow = true;
-  g.add(water);
-  const surface = new THREE.Mesh(ribbonGeometry(curve, W * 0.92, 140, 0.03), new THREE.MeshBasicMaterial({ map: foam, transparent: true, opacity: 0.55, depthWrite: false }));
-  g.add(surface);
-
-  // Berges de neige le long du tracé
-  const snow = mat('#f4f9fd', { roughness: 0.9 });
-  const lump = sphere(1, 14, 10);
-  for (let d = 0.1; d < len - 0.15; d += 0.22) {
-    const s = d / len;
-    const p = curve.getPointAt(s);
-    const tg = curve.getTangentAt(s);
-    const side = new THREE.Vector3(tg.z, 0, -tg.x).normalize();
-    for (const k of [-1, 1]) {
-      const b = mesh(lump, snow, p.x + side.x * k * (W / 2 + 0.07), 0.03, p.z + side.z * k * (W / 2 + 0.07));
-      const r = 0.12 + Math.random() * 0.06;
-      b.scale.set(r * 1.2, r * 0.55, r);
-      g.add(b);
-    }
-  }
-
-  // Source : un trou dans la glace où l'eau bouillonne
-  const start = curve.getPointAt(0);
-  const hole = new THREE.Mesh(new THREE.CircleGeometry(0.5, 28), new THREE.MeshBasicMaterial({ color: '#174a70' }));
-  hole.rotation.x = -Math.PI / 2;
-  hole.position.set(start.x, 0.028, start.z);
-  g.add(hole);
-  const lip = mesh(new THREE.TorusGeometry(0.5, 0.08, 10, 32), snow, start.x, 0.035, start.z);
-  lip.rotation.x = Math.PI / 2;
-  g.add(lip);
-
-  // Cascade qui tombe du bord de la banquise jusqu'à la mer
-  const end = curve.getPointAt(1);
-  const fallTex = streakTexture('#2a7cc0', 'rgba(220,245,255,A)', 80, true);
-  fallTex.repeat.set(1, 1.5);
-  const fall = new THREE.Mesh(new THREE.PlaneGeometry(W, 0.5), new THREE.MeshStandardMaterial({ map: fallTex, roughness: 0.1, transparent: true, opacity: 0.95 }));
-  fall.position.set(end.x, -0.2, edgeZ + 0.04);
-  g.add(fall);
-  const splash = [];
-  for (let i = 0; i < 7; i++) {
-    const b = mesh(sphere(0.08 + Math.random() * 0.06, 12, 8), mat('#f4fbff', { roughness: 0.6 }), end.x + (Math.random() - 0.5) * W, -0.42, edgeZ + 0.25 + Math.random() * 0.3);
-    b.userData.phase = Math.random() * 6;
-    g.add(b);
-    splash.push(b);
-  }
-
-  // Ronds dans l'eau (sauts de poissons, source qui bouillonne, pied de la cascade)
-  const ripples = [];
-  const ripple = (x, y, z, size = 0.12) => {
-    const r = new THREE.Mesh(new THREE.TorusGeometry(size, 0.012, 6, 28), new THREE.MeshBasicMaterial({ color: '#d8f2ff', transparent: true, opacity: 0.8 }));
-    r.rotation.x = Math.PI / 2;
-    r.position.set(x, y, z);
-    g.add(r);
-    ripples.push({ r, t: 0 });
-  };
-
-  // Poissons qui remontent le courant en suivant les méandres
-  const colors = ['#ff8a3d', '#ffd54f', '#9fd8ff', '#ff6f91', '#7be0b0'];
-  const fishEye = new THREE.MeshStandardMaterial({ color: '#10151f', roughness: 0.3 });
-  fishEye.userData.keepColor = true;
-  const fish = colors.map((col, i) => {
-    const f = new THREE.Group();
-    const body = mesh(sphere(0.09, 18, 12), mat(col, { roughness: 0.35 }));
-    body.scale.set(1.7, 0.75, 0.55);
-    f.add(body);
-    const tail = mesh(new THREE.ConeGeometry(0.07, 0.12, 4), mat(col, { roughness: 0.4 }), -0.18, 0, 0);
-    tail.rotation.z = Math.PI / 2;
-    f.add(tail);
-    for (const z of [-1, 1]) f.add(mesh(sphere(0.018, 8, 6), fishEye, 0.1, 0.025, z * 0.045));
-    f.userData = { s: 0.1 + (i / colors.length) * 0.8, lane: (Math.random() - 0.5) * 0.4, speed: 0.25 + Math.random() * 0.25, phase: Math.random() * 6, jump: -1 };
-    g.add(f);
-    return f;
-  });
-
-  // Glaçons qui dérivent avec le courant puis basculent dans la cascade
-  const chunks = [0, 1, 2, 3].map((i) => {
-    const m = mesh(new THREE.IcosahedronGeometry(0.1 + Math.random() * 0.05, 0), mat('#e8f6ff', { roughness: 0.25 }));
-    m.scale.y = 0.45;
-    m.userData = { s: i / 4, lane: (Math.random() - 0.5) * 0.35, fall: -1 };
-    g.add(m);
-    return m;
-  });
-
-  const tmp = new THREE.Vector3();
-  const side = new THREE.Vector3();
-  const along = (s, lane, out) => {
-    curve.getPointAt(s, out);
-    const tg = curve.getTangentAt(s);
-    side.set(tg.z, 0, -tg.x).normalize();
-    return out.addScaledVector(side, lane);
-  };
-  let bubble = 0;
-
-  return (t, dt) => {
-    // Le courant : la couche profonde et l'écume descendent la rivière
-    deep.offset.y -= dt * 0.55;
-    foam.offset.y -= dt * 0.9;
-    fallTex.offset.y += dt * 1.6;
-
-    for (const f of fish) {
-      const u = f.userData;
-      u.s -= (u.speed * dt) / len;
-      if (u.s < 0.02) u.s += 0.92;
-      const edge = Math.min(1, (u.s - 0.02) / 0.05, (0.94 - u.s) / 0.05);
-      f.scale.setScalar(Math.max(0.01, edge));
-      along(u.s, u.lane + Math.sin(t * 2 + u.phase) * 0.06, tmp);
-      const tg = curve.getTangentAt(u.s);
-      let y = 0.005, pitch = 0;
-      if (u.jump < 0 && edge >= 1 && Math.random() < dt * 0.12) u.jump = 0;
-      if (u.jump >= 0) {
-        u.jump += dt / 0.7;
-        y = Math.sin(u.jump * Math.PI) * 0.45;
-        pitch = (0.5 - u.jump) * 1.6;
-        if (u.jump >= 1) {
-          u.jump = -1;
-          ripple(tmp.x, 0.035, tmp.z);
-        }
-      }
-      f.position.set(tmp.x, y, tmp.z);
-      // Le poisson regarde vers l'amont (contre le courant)
-      f.rotation.set(0, Math.atan2(tg.z, -tg.x) + Math.sin(t * 6 + u.phase) * 0.25, pitch);
-    }
-
-    for (const m of chunks) {
-      const u = m.userData;
-      if (u.fall < 0) {
-        u.s += (0.5 * dt) / len;
-        along(Math.min(u.s, 1), u.lane, tmp);
-        m.position.set(tmp.x, 0.05 + Math.sin(t * 3 + u.lane * 20) * 0.01, tmp.z);
-        m.rotation.y += dt * 0.6;
-        if (u.s >= 1) u.fall = 0;
-      } else {
-        // Bascule par-dessus le bord et tombe dans la mer
-        u.fall += dt;
-        m.position.z += dt * 0.5;
-        m.position.y = 0.05 - u.fall * u.fall * 4;
-        m.rotation.x += dt * 4;
-        if (m.position.y < -0.4) {
-          ripple(m.position.x, -0.4, m.position.z, 0.15);
-          u.s = 0;
-          u.fall = -1;
-          m.rotation.x = 0;
-        }
-      }
-    }
-
-    // La source bouillonne, l'écume danse au pied de la cascade
-    bubble += dt;
-    if (bubble > 0.7) {
-      bubble = 0;
-      ripple(start.x + (Math.random() - 0.5) * 0.4, 0.035, start.z + (Math.random() - 0.5) * 0.4, 0.08);
-    }
-    for (const b of splash) b.position.y = -0.4 + Math.abs(Math.sin(t * 4 + b.userData.phase)) * 0.06;
-
-    for (let i = ripples.length - 1; i >= 0; i--) {
-      const rp = ripples[i];
-      rp.t += dt;
-      rp.r.scale.setScalar(1 + rp.t * 3);
-      rp.r.material.opacity = Math.max(0, 0.8 - rp.t);
-      if (rp.t > 0.8) {
-        g.remove(rp.r);
-        ripples.splice(i, 1);
-      }
-    }
-  };
-}
-
-/** Train d'astéroïdes : des rochers qui flottent en tournoyant entre deux faisceaux de guidage. */
-function buildAsteroidTrain(scene) {
-  const g = new THREE.Group();
-  g.position.set(CONVEYOR_X, 0, 6.3);
-  const L = 5.6;
-  for (const x of [-2.6, -0.9, 0.9, 2.6]) {
-    g.add(mesh(cylinder(0.08, 0.13, 0.34, 14), metal('#3a4150'), x, 0.17, 0));
-    const ring = mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 24), neon('#4cc9f0', 1.4), x, 0.35, 0);
-    ring.rotation.x = Math.PI / 2;
-    g.add(ring);
-  }
-  for (const z of [-0.3, 0.3]) g.add(mesh(new THREE.BoxGeometry(L, 0.018, 0.018), neon('#4cc9f0', 1.2), 0, 0.36, z));
-  // Champ de traction très léger entre les faisceaux
-  const field = new THREE.Mesh(new THREE.PlaneGeometry(L, 0.6), neon('#4cc9f0', 0.6, { transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
-  field.rotation.x = -Math.PI / 2;
-  field.position.y = 0.36;
-  g.add(field);
-
-  // Couleur de roche conservée : la teinte du thème ne doit pas la blanchir
-  const rock = new THREE.MeshStandardMaterial({ color: '#7b7f8a', roughness: 0.95, flatShading: true });
-  rock.userData.keepColor = true;
-  const ores = ['#b388ff', '#4cc9f0', '#3ddc97'];
-  const rocks = [];
-  for (let i = 0; i < 6; i++) {
-    const a = new THREE.Group();
-    const geo = new THREE.IcosahedronGeometry(0.17 + Math.random() * 0.06, 1);
-    const p = geo.attributes.position;
-    for (let k = 0; k < p.count; k++) {
-      const s = 0.8 + Math.random() * 0.35;
-      p.setXYZ(k, p.getX(k) * s, p.getY(k) * s, p.getZ(k) * s);
-    }
-    geo.computeVertexNormals();
-    a.add(mesh(geo, rock));
-    // Un astéroïde sur deux porte un minerai lumineux
-    if (i % 2 === 0) a.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), neon(ores[i % ores.length], 1.6)).translateY(0.15).translateX(0.05));
-    a.userData = { x: -L / 2 + (i / 6) * L, spin: 0.6 + Math.random(), phase: Math.random() * 6 };
-    g.add(a);
-    rocks.push(a);
-  }
-  scene.add(g);
-
-  return (t, dt) => {
-    for (const a of rocks) {
-      const u = a.userData;
-      u.x += dt * 0.45;
-      if (u.x > L / 2) u.x -= L;
-      const edge = Math.min(1, (L / 2 - Math.abs(u.x)) / 0.35);
-      a.position.set(u.x, 0.62 + Math.sin(t * 1.6 + u.phase) * 0.05, 0);
-      a.rotation.set(t * u.spin, t * u.spin * 0.7, 0);
-      a.scale.setScalar(Math.max(0.01, edge));
     }
   };
 }
@@ -1087,86 +760,21 @@ function buildTrash(st) {
   zoneMarker(st);
 }
 
-
-/** Tour de glace : blocs hexagonaux translucides, stalactites, pointe de cristal. */
-function buildIceTower(g) {
-  const ice = new THREE.MeshPhysicalMaterial({ color: '#cdeeff', roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, opacity: 0.85 });
-  const frost = mat('#f4f9fd', { roughness: 0.9 });
-  // Lueur bleutée à l'intérieur de la glace
-  g.add(new THREE.Mesh(cylinder(0.1, 0.16, 1.5, 12), neon('#9fe6ff', 0.7)).translateY(0.95));
-  const tiers = [[0.5, 0.58, 0.5, 0.39], [0.4, 0.48, 0.48, 0.88], [0.3, 0.38, 0.45, 1.35]];
-  for (const [rt, rb, h, y] of tiers) {
-    g.add(mesh(new THREE.CylinderGeometry(rt, rb, h, 6), ice, 0, y, 0));
-    const band = mesh(new THREE.TorusGeometry(rt * 1.02, 0.025, 6, 6), frost, 0, y + h / 2, 0);
-    band.rotation.x = Math.PI / 2;
-    g.add(band);
-    for (let k = 0; k < 6; k++) {
-      const a = (k / 6) * Math.PI * 2 + 0.3;
-      const icicle = mesh(new THREE.ConeGeometry(0.035, 0.18, 6), ice, Math.cos(a) * rt * 0.98, y + h / 2 - 0.1, Math.sin(a) * rt * 0.98);
-      icicle.rotation.x = Math.PI;
-      g.add(icicle);
-    }
-  }
-  g.add(mesh(new THREE.ConeGeometry(0.3, 0.75, 6), ice, 0, 1.95, 0));
-  const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), neon('#e6f8ff', 1.1));
-  tip.position.y = 2.42;
-  tip.scale.set(1, 1.6, 1);
-  g.add(tip);
-  return (t) => (tip.rotation.y = t * 0.6);
-}
-
-/** Antenne satellite : mât haubané, parabole qui balaie le ciel, récepteur qui clignote. */
-function buildSatelliteTower(g) {
-  const steel = mat('#c9ced8', { metalness: 0.6, roughness: 0.3 });
-  g.add(mesh(cylinder(0.08, 0.13, 1.6, 16), steel, 0, 0.88, 0));
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2;
-    const strut = mesh(cylinder(0.02, 0.02, 0.95, 8), steel, Math.cos(a) * 0.28, 0.5, Math.sin(a) * 0.28);
-    strut.lookAt(0, 1.2, 0);
-    strut.rotateX(Math.PI / 2);
-    g.add(strut);
-  }
-  const head = new THREE.Group();
-  head.position.y = 1.72;
-  g.add(head);
-  head.add(mesh(roundedBox(0.22, 0.16, 0.22, 0.04), steel));
-  const dish = new THREE.Group();
-  dish.rotation.x = -0.7;
-  head.add(dish);
-  const bowl = mesh(new THREE.SphereGeometry(0.62, 36, 14, 0, Math.PI * 2, 0, Math.PI / 3.2), mat('#eef1f6', { side: THREE.DoubleSide, roughness: 0.4 }), 0, 0.62, 0);
-  bowl.rotation.x = Math.PI;
-  dish.add(bowl);
-  for (let k = 0; k < 3; k++) {
-    const a = (k / 3) * Math.PI * 2;
-    const rod = mesh(cylinder(0.012, 0.012, 0.5, 6), steel, Math.cos(a) * 0.2, 0.3, Math.sin(a) * 0.2);
-    rod.lookAt(0, 0.55, 0);
-    rod.rotateX(Math.PI / 2);
-    dish.add(rod);
-  }
-  const receiver = new THREE.Mesh(sphere(0.045, 14, 10), neon('#4cc9f0', 2));
-  receiver.position.y = 0.55;
-  dish.add(receiver);
-  return (t) => {
-    head.rotation.y = Math.sin(t * 0.25) * 1.2;
-    receiver.material.color.set('#4cc9f0').multiplyScalar(Math.sin(t * 4) > 0 ? 2.4 : 0.6);
-  };
-}
-
 function buildDock(st, scene, theme) {
   const g = st.group;
   g.add(mesh(octagon(new THREE.CylinderGeometry(1.25, 1.35, 0.14, 8)), metal('#232a39'), 0, 0.07, 0));
   g.add(octRim(1.26, 0.145, MARK, 0.025, 0.8));
-  const style = theme.dock;
-  if (style === 'ice') st.animateTower = buildIceTower(g);
-  else if (style === 'satellite') st.animateTower = buildSatelliteTower(g);
+  // Certains thèmes remplacent la tour (glace, antenne satellite)
+  const tower = theme.tower;
+  if (tower) st.animateTower = tower.build(g);
   else {
     g.add(mesh(cylinder(0.24, 0.32, 1.6, 20), metal('#2a3140'), 0, 0.9, 0));
     g.add(mesh(cylinder(0.3, 0.26, 0.08, 20), metal('#323a4a'), 0, 1.74, 0));
   }
-  const ringColor = style === 'ice' ? '#d8f4ff' : style === 'satellite' ? '#4cc9f0' : st.color;
+  const ringColor = tower?.rings?.color ?? st.color;
   const rings = [0, 1, 2].map((i) => {
-    // Anneaux qui montent le long de la tour : givre, signal ou énergie selon le thème
-    const r = new THREE.Mesh(new THREE.TorusGeometry(style === 'ice' ? 0.62 : 0.34, 0.018, 8, 40), neon(ringColor, style === 'ice' ? 0.9 : 1.3));
+    // Anneaux qui montent le long de la tour (givre, signal ou énergie selon le thème)
+    const r = new THREE.Mesh(new THREE.TorusGeometry(tower?.rings?.radius ?? 0.34, 0.018, 8, 40), neon(ringColor, tower?.rings?.intensity ?? 1.3));
     r.rotation.x = Math.PI / 2;
     r.userData.phase = i / 3;
     g.add(r);

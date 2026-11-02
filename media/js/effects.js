@@ -96,6 +96,18 @@ function buildTrashItem(kind) {
   return new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.24, 0.012), [side, side, side, side, face, face]);
 }
 
+// Géométrie partagée par toutes les ondes (seul le matériau est créé et libéré à chaque fois).
+const RING_GEO = new THREE.TorusGeometry(1, 0.025, 8, 48);
+
+/** Libère un objet d'effet retiré de la scène (les textures de cartes, partagées, sont gardées). */
+function release(obj) {
+  obj.traverse((o) => {
+    if (!o.isMesh) return;
+    o.geometry.dispose();
+    for (const m of [].concat(o.material)) m.dispose();
+  });
+}
+
 export class Effects {
   constructor(scene) {
     this.scene = scene;
@@ -193,7 +205,7 @@ export class Effects {
 
   /** Onde circulaire néon qui s'élargit. */
   ring(pos, { color = '#ffffff', from = 0.2, to = 2, life = 1.2, axis = 'y', opacity = 0.8 } = {}) {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.025, 8, 48), neon(color, 2.2, { transparent: true, opacity, depthWrite: false }));
+    const m = new THREE.Mesh(RING_GEO, neon(color, 2.2, { transparent: true, opacity, depthWrite: false }));
     m.position.copy(pos);
     if (axis === 'y') m.rotation.x = Math.PI / 2;
     this.scene.add(m);
@@ -203,7 +215,7 @@ export class Effects {
   /** Signal radio : des ondes convergent vers `target()` (la pointe d'une antenne), puis `onArrive`. */
   signal(target, onArrive) {
     const rings = [0, 1, 2].map(() => {
-      const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 8, 48), neon('#7df9ff', 2.2, { transparent: true, opacity: 0, depthWrite: false }));
+      const m = new THREE.Mesh(RING_GEO, neon('#7df9ff', 2.2, { transparent: true, opacity: 0, depthWrite: false }));
       m.rotation.x = Math.PI / 2;
       this.scene.add(m);
       return m;
@@ -234,7 +246,6 @@ export class Effects {
       const x = r.t / r.life;
       if (x >= 1) {
         this.scene.remove(r.m);
-        r.m.geometry.dispose();
         r.m.material.dispose();
         return false;
       }
@@ -276,6 +287,7 @@ export class Effects {
         if (k >= 1) {
           this.burst(end, { count: 26, colors: ['#3ddc97', '#ffd54f', '#ffffff'], speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
           this.scene.remove(c.g);
+          release(c.g);
           c.onArrive?.();
           return false;
         }
@@ -317,6 +329,7 @@ export class Effects {
         } else return true;
       }
       this.scene.remove(th.m);
+      release(th.m);
       return false;
     });
 
@@ -332,7 +345,6 @@ export class Effects {
       if (sg.t < 0.22 * 2 + 0.6) return true;
       for (const m of sg.rings) {
         this.scene.remove(m);
-        m.geometry.dispose();
         m.material.dispose();
       }
       this.burst(pos, { count: 16, colors: ['#7df9ff', '#ffffff'], speed: 1, up: 1.2, life: 0.6, gravity: -1, size: 0.03 });

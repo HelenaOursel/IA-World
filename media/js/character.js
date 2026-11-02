@@ -1,7 +1,6 @@
-// Personnages animés (Claude et ses agents) ; leur apparence dépend du thème (voir skins.js).
+// Personnages animés (Claude et ses agents) ; leur apparence dépend du thème (themes/<id>/).
 import * as THREE from '../vendor/three.module.min.js';
 import { easeOutBack, lerpAngle } from './geometry.js';
-import { SKINS } from './skins.js';
 
 const POSE_KEYS = ['sLx', 'sLz', 'eL', 'sRx', 'sRz', 'eR', 'tiltX', 'tiltZ', 'yaw', 'bob', 'lift'];
 
@@ -195,7 +194,7 @@ function drawFace(g, w, h, s) {
 }
 
 export class Character {
-  constructor({ id, name, agentType = '', color, isMain = false, skin = 'robot' }) {
+  constructor({ id, name, agentType = '', color, isMain = false, skin }) {
     this.id = id;
     this.name = name;
     this.agentType = agentType;
@@ -225,7 +224,7 @@ export class Character {
 
   /** Construit l'apparence du thème ; `look` décrit ses particularités (main, sommet, lévitation, yeux…). */
   build() {
-    this.look = (SKINS[this.skin] ?? SKINS.robot)(this);
+    this.look = this.skin(this);
     this.wobble = { x: 0, z: 0, vx: 0, vz: 0 };
     this.signalFlash = 0;
   }
@@ -262,6 +261,20 @@ export class Character {
   receiveSignal() {
     this.signalFlash = 1;
     this.wobble.vz += 6;
+  }
+
+  /** Libère géométries, matériaux et textures propres à ce personnage (pas ceux partagés via un cache). */
+  dispose() {
+    const free = (o) => o && !o.userData.shared && o.dispose();
+    this.root.traverse((o) => {
+      if (!o.isMesh) return;
+      free(o.geometry);
+      for (const m of [].concat(o.material)) {
+        free(m.map);
+        free(m);
+      }
+    });
+    free(this.faceTex);
   }
 
   /** Point au-dessus du robot, en coordonnées monde (pour les bulles). */

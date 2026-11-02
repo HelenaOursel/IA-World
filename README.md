@@ -72,5 +72,8 @@ npm run package   # produit ia-world-<version>.vsix
 Appuyer sur F5 dans VS Code lance une fenêtre de développement avec l'extension chargée.
 
 - `src/` : extension (lecture des transcripts, panneau webview).
-- `media/js/` : monde 3D (three.js) ; `world.js` pour le décor, `character.js` pour les personnages,
-  `main.js` pour la traduction des événements en animations.
+- `media/js/` : monde 3D (three.js) ; `world.js` pour l'usine commune (postes, plate-forme),
+  `character.js` pour les animations des personnages, `main.js` pour la traduction des événements en animations.
+- `media/js/themes/` : un dossier par thème (`usine`, `banquise`, `espace`, `slime`). Chaque dossier contient
+  `theme.js` (ambiance et pièces utilisées), le personnage, et ce que le thème remplace (tour, tapis, décor, sol).
+  `themes/index.js` liste les thèmes et décrit ce qu'un thème peut fournir ; seul le thème choisi est chargé.
