@@ -56,9 +56,51 @@ function snowyPine(scene, x, z, s = 1) {
   scene.add(g);
 }
 
+
+/** Aurore boréale : voiles lumineux qui ondulent dans le fond étoilé, derrière la banquise. */
+function aurora(scene) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    fog: false,
+    uniforms: { time: { value: 0 }, phase: { value: 0 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader:
+      'uniform float time; uniform float phase; varying vec2 vUv;' +
+      'void main(){' +
+      ' float x = vUv.x + phase;' +
+      // Le voile ondule : sa hauteur varie le long de l'aurore et dans le temps
+      ' float y = vUv.y + 0.12 * sin(x * 18.0 + time * 0.35) + 0.05 * sin(x * 47.0 - time * 0.6);' +
+      ' float band = smoothstep(0.05, 0.38, y) * smoothstep(0.98, 0.55, y);' +
+      ' float rays = 0.5 + 0.5 * sin(x * 260.0 + time * 1.1 + sin(x * 31.0 + time * 0.25) * 4.0);' +
+      ' float flicker = 0.6 + 0.4 * sin(time * 0.5 + x * 23.0);' +
+      ' float ends = smoothstep(0.0, 0.12, vUv.x) * smoothstep(1.0, 0.88, vUv.x);' +
+      ' vec3 col = mix(vec3(0.12, 1.0, 0.55), vec3(0.62, 0.32, 1.0), smoothstep(0.4, 1.0, y));' +
+      ' gl_FragColor = vec4(col * band * (0.35 + 0.65 * rays) * flicker * ends * 0.8, 1.0); }',
+  });
+  // Deux rubans courbes qui entourent l'arrière de l'île, à des distances différentes
+  const veils = [
+    // Rayon, hauteur, centre vertical : assez hauts pour se voir en plongée comme en vue rasante
+    [48, 42, -9, 0],
+    [58, 48, -7, 0.37],
+  ].map(([radius, height, y, phase]) => {
+    const m = mat.clone();
+    m.uniforms.phase.value = phase;
+    const veil = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 128, 1, true, Math.PI * 0.3, Math.PI * 1.4), m);
+    veil.position.y = y;
+    scene.add(veil);
+    return m;
+  });
+  return (t) => {
+    for (const m of veils) m.uniforms.time.value = t;
+  };
+}
+
 function banquiseDecor(scene) {
   // Mer autour de la banquise et blocs de glace qui dérivent
-  const sea = new THREE.Mesh(new THREE.CircleGeometry(80, 64), new THREE.MeshStandardMaterial({ color: '#2f86c4', roughness: 0.18, metalness: 0.15 }));
+  const sea = new THREE.Mesh(new THREE.CircleGeometry(80, 64), new THREE.MeshStandardMaterial({ color: '#123f66', roughness: 0.15, metalness: 0.2 }));
   sea.rotation.x = -Math.PI / 2;
   sea.position.y = -0.42;
   sea.receiveShadow = true;
@@ -80,8 +122,10 @@ function banquiseDecor(scene) {
     scene.add(pile);
   }
   const snow = snowfall(scene);
+  const lights = aurora(scene);
   return (t, dt) => {
     snow(t, dt);
+    lights(t);
     for (const f of floes) {
       const u = f.userData;
       u.a += u.speed * dt;
@@ -243,16 +287,16 @@ export const THEMES = {
     name: 'Banquise · pingouins',
     skin: 'penguin',
     shell: 'pingouin@banquise:~$',
-    sky: { top: '#7ec4f5', mid: '#e8f6ff', bottom: '#cde9fb' },
-    stars: 0,
-    fog: { color: '#dcefff', near: 45, far: 120 },
-    hemi: { sky: '#ffffff', ground: '#8fb8d6', intensity: 0.95 },
-    sun: { color: '#fff6e8', intensity: 1.5 },
+    sky: { top: '#030814', mid: '#0d2340', bottom: '#14304f' },
+    stars: 900,
+    fog: { color: '#0b1d33', near: 45, far: 130 },
+    hemi: { sky: '#9fc3ff', ground: '#2a4766', intensity: 0.75 },
+    sun: { color: '#d4e4ff', intensity: 1.1 },
     floor: { style: 'snow', mark: 'rgba(70,130,180,0.3)', metalness: 0, roughness: 0.9 },
     platform: { side: '#a9cfe6', band: '#8fbcd9', rim: '#ffffff', rimIntensity: 0.6, underside: false },
     tint: { color: '#b7d3e6', amount: 0.6 },
-    bloom: { strength: 0.25, threshold: 0.95 },
-    exposure: 0.85,
+    bloom: { strength: 0.45, threshold: 0.85 },
+    exposure: 0.9,
     dock: 'ice',
     conveyor: 'river',
     decor: banquiseDecor,
