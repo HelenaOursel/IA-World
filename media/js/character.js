@@ -194,13 +194,15 @@ function drawFace(g, w, h, s) {
 }
 
 export class Character {
-  constructor({ id, name, agentType = '', color, isMain = false, skin }) {
+  constructor({ id, name, agentType = '', color, isMain = false, skin, poses = {} }) {
     this.id = id;
     this.name = name;
     this.agentType = agentType;
     this.color = color;
     this.isMain = isMain;
     this.skin = skin;
+    // Poses propres au thème (voir themes/<id>/actions.js), en plus des poses communes
+    this.poses = poses;
     this.size = isMain ? 0.7 : 0.6;
 
     this.root = new THREE.Group();
@@ -210,7 +212,9 @@ export class Character {
     this.action = 'idle';
     this.path = [];
     this.face = null;
-    this.speed = isMain ? 2.3 : 2.7;
+    this.speed = this.baseSpeed = isMain ? 2.3 : 2.7;
+    // Pose pendant les déplacements (glissade, bonds…) ; par défaut, la marche
+    this.moveAction = null;
     this.phase = Math.random() * 6;
     this.reaction = null;
     this.scaleAnim = null;
@@ -351,7 +355,7 @@ export class Character {
       this.root.rotation.y = lerpAngle(this.root.rotation.y, this.face, 1 - Math.exp(-dt * 6));
     }
 
-    const action = moving ? 'drive' : this.action;
+    const action = moving ? this.moveAction ?? 'drive' : this.action;
     const target = this.computePose(action, t);
     const face = this.computeFace(action, t, dt);
     this.applyReaction(target, face, dt, t);
@@ -395,6 +399,11 @@ export class Character {
     p.eR = -0.25;
     p.bob = Math.sin(t * 2 + this.phase) * 0.006;
     const type = (offset) => -1.45 + Math.sin(t * 16 + offset) * 0.07;
+    const custom = this.poses[action];
+    if (custom?.pose) {
+      custom.pose(p, t, this);
+      return p;
+    }
 
     switch (action) {
       case 'drive':
@@ -514,7 +523,8 @@ export class Character {
 
   computeFace(action, t, dt) {
     const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0, color: this.look.eye ?? this.color, glow: this.look.glow !== false, mouthless: !!this.look.mouthless };
-    switch (action) {
+    if (this.poses[action]?.face) this.poses[action].face(f, t, this);
+    else switch (action) {
       case 'type':
       case 'read':
       case 'search':

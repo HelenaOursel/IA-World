@@ -208,7 +208,7 @@ export function parseEntry(entry: any, agentId: string, isMain = agentId === 'ma
 function pushPrompt(out: WorldEvent[], raw: string, agentId: string, isMain: boolean): void {
   if (!isMain) return;
   if (/^\s*\[Request interrupted/i.test(raw)) {
-    out.push({ type: 'error', agentId, text: "Interrompu par l'utilisateur" });
+    out.push({ type: 'interrupt', agentId });
     return;
   }
   const text = cleanText(raw, 160);

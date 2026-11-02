@@ -1,4 +1,4 @@
-// Effets visuels : étincelles cubiques, ondes néon, cœurs, puces et signaux radio (prompts).
+// Effets visuels : étincelles cubiques, ondes néon, cœurs, cadeaux et signaux radio (prompts).
 import * as THREE from '../vendor/three.module.min.js';
 import { neon } from './geometry.js';
 
@@ -21,27 +21,6 @@ function heartTexture() {
   heartTex = new THREE.CanvasTexture(c);
   heartTex.colorSpace = THREE.SRGBColorSpace;
   return heartTex;
-}
-
-/** Petite puce électronique : circuit vert, broches dorées, cœur lumineux. */
-function buildChip() {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.26), new THREE.MeshStandardMaterial({ color: '#1d7a4b', roughness: 0.5 })));
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.04, 0.14), new THREE.MeshStandardMaterial({ color: '#15181f', roughness: 0.3, metalness: 0.4 })));
-  const gold = new THREE.MeshStandardMaterial({ color: '#ffcf5a', metalness: 0.9, roughness: 0.25 });
-  for (let i = 0; i < 4; i++) {
-    for (const side of [-1, 1]) {
-      const a = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.05), gold);
-      a.position.set(-0.075 + i * 0.05, 0, side * 0.14);
-      g.add(a);
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.012, 0.02), gold);
-      b.position.set(side * 0.14, 0, -0.075 + i * 0.05);
-      g.add(b);
-    }
-  }
-  const core = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.045, 0.05), neon('#3ddc97', 2.5));
-  g.add(core);
-  return g;
 }
 
 const cardTextures = new Map();
@@ -130,7 +109,7 @@ export class Effects {
       scene.add(s);
       this.hearts.push({ s, life: 0, max: 1, phase: 0, x: 0, z: 0, alive: false });
     }
-    this.chips = [];
+    this.gifts = [];
     this.throws = [];
   }
 
@@ -168,12 +147,12 @@ export class Effects {
     }
   }
 
-  /** Puce électronique qui vole jusqu'au robot puis disparaît dedans. `target()` donne sa position actuelle. */
-  chip(from, target, onCatch, onArrive) {
-    const g = buildChip();
+  /** Cadeau du thème (puce, poisson…) qui vole jusqu'au personnage puis disparaît dedans. `target()` donne sa position actuelle. */
+  gift(present, from, target, onCatch, onArrive) {
+    const g = present.build();
     g.position.copy(from);
     this.scene.add(g);
-    this.chips.push({ g, t: 0, from: from.clone(), target, onCatch, onArrive, caught: false });
+    this.gifts.push({ g, colors: present.colors, t: 0, from: from.clone(), target, onCatch, onArrive, caught: false });
   }
 
   /** Projette des petits cubes depuis `pos`. glow > 1 les fait briller. */
@@ -268,7 +247,7 @@ export class Effects {
       h.s.material.opacity = 1 - x * x;
     }
 
-    this.chips = this.chips.filter((c) => {
+    this.gifts = this.gifts.filter((c) => {
       c.t += dt;
       const end = c.target();
       // Vol en arc avec tournoiement, puis absorption dans le robot
@@ -285,7 +264,7 @@ export class Effects {
         const k = Math.min(1, (c.t - 1.1) / 0.3);
         c.g.scale.setScalar(Math.max(0.01, 1 - k));
         if (k >= 1) {
-          this.burst(end, { count: 26, colors: ['#3ddc97', '#ffd54f', '#ffffff'], speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
+          this.burst(end, { count: 26, colors: c.colors, speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
           this.scene.remove(c.g);
           release(c.g);
           c.onArrive?.();

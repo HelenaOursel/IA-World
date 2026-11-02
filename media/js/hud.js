@@ -83,11 +83,6 @@ function el(tag, cls, parent, text) {
   return e;
 }
 
-const PINS = [7, 10.5, 14, 17.5]
-  .map((p) => `<rect x="${p - 0.75}" y="2" width="1.5" height="3" fill="#ffcf5a"/><rect x="${p - 0.75}" y="19" width="1.5" height="3" fill="#ffcf5a"/><rect x="2" y="${p - 0.75}" width="3" height="1.5" fill="#ffcf5a"/><rect x="19" y="${p - 0.75}" width="3" height="1.5" fill="#ffcf5a"/>`)
-  .join('');
-export const CHIP_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${PINS}<rect x="5" y="5" width="14" height="14" rx="2" fill="#1d7a4b"/><rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="#15181f"/><rect x="11" y="11" width="2" height="2" fill="#3ddc97"/></svg>`;
-
 export class Hud {
   constructor(root, handlers) {
     this.root = root;
@@ -139,10 +134,12 @@ export class Hud {
     this.addLogTab('all', 'Tout', 'var(--cyan)');
 
     const controls = el('div', 'controls', root);
-    const chip = el('button', 'chip-item', controls);
-    chip.innerHTML = CHIP_SVG + '<span>Puce</span>';
-    chip.title = 'Glisse la puce sur un robot pour lui faire plaisir';
-    chip.addEventListener('pointerdown', (e) => this.dragChip(e));
+    // Cadeau propre au thème (puce, poisson, étoile, cristal)
+    const gift = handlers.gift;
+    const giftBtn = el('button', 'gift-item', controls);
+    giftBtn.innerHTML = gift.svg + `<span>${gift.name}</span>`;
+    giftBtn.title = `Glisse ${gift.article} sur un personnage pour lui faire plaisir`;
+    giftBtn.addEventListener('pointerdown', (e) => this.dragGift(e));
     // Les autres actions sont rangées dans un menu qui s'ouvre vers le haut.
     const menu = el('div', 'action-menu', controls);
     this.menuBtn = el('button', 'menu-toggle', menu, '☰ Actions');
@@ -177,7 +174,7 @@ export class Hud {
     demo.addEventListener('click', () => handlers.toggleDemo());
   }
 
-  /** Masque tout le HUD sauf l'encart IA World et le bouton Puce. */
+  /** Masque tout le HUD sauf l'encart IA World et le bouton du cadeau. */
   setHudHidden(hidden) {
     this.hudHidden = hidden;
     this.root.classList.toggle('hud-hidden', hidden);
@@ -196,19 +193,19 @@ export class Hud {
     this.status.textContent = live ? '● En direct' : '○ En pause';
   }
 
-  /** Fait glisser une puce depuis le bouton jusqu'au monde ; handlers.dropChip(x, y) dit si un robot l'a reçue. */
-  dragChip(e) {
+  /** Fait glisser le cadeau depuis le bouton jusqu'au monde ; handlers.dropGift(x, y) dit si un personnage l'a reçu. */
+  dragGift(e) {
     e.preventDefault();
-    const ghost = el('div', 'chip-ghost', this.root);
-    ghost.innerHTML = CHIP_SVG;
+    const ghost = el('div', 'gift-ghost', this.root);
+    ghost.innerHTML = this.handlers.gift.svg;
     const move = (ev) => {
       ghost.style.transform = `translate(${ev.clientX}px, ${ev.clientY}px) translate(-50%, -50%) rotate(${(ev.clientX % 40) - 20}deg)`;
-      this.handlers.chipHover(ev.clientX, ev.clientY);
+      this.handlers.giftHover(ev.clientX, ev.clientY);
     };
     const up = (ev) => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      const given = this.handlers.dropChip(ev.clientX, ev.clientY);
+      const given = this.handlers.dropGift(ev.clientX, ev.clientY);
       if (given) ghost.remove();
       else {
         ghost.classList.add('missed');
