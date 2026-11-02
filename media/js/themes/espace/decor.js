@@ -1,6 +1,7 @@
 // Décor de l'Espace : planète à anneau, lune, astéroïdes et panneaux solaires.
 import * as THREE from '../../../vendor/three.module.min.js';
 import { mat, mesh, sphere } from '../../geometry.js';
+import { scienceInstruments } from './instruments.js';
 
 function planetTexture() {
   const c = document.createElement('canvas');
@@ -69,7 +70,10 @@ export function espaceDecor(scene) {
   }
   solarWing(scene, -1);
   solarWing(scene, 1);
+  // Instruments scientifiques sur la station ; le télescope vise la grande planète
+  const science = scienceInstruments(scene, planet.position);
   return (t, dt) => {
+    science(t, dt);
     planet.rotation.y += dt * 0.01;
     for (const m of rocks) {
       const u = m.userData;

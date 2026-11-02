@@ -402,7 +402,7 @@ function bayCenter() {
 
 function spawnAgent(info, animated = true) {
   if (chars.has(info.id)) return chars.get(info.id);
-  const ch = new CharacterClass({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin, poses: theme.actions?.poses });
+  const ch = new CharacterClass({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.agentSkin ?? theme.skin, poses: theme.actions?.poses });
   ch.ownerId = info.ownerId;
   addCharacter(ch);
   if (animated) {

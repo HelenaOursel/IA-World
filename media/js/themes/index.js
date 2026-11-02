@@ -3,6 +3,7 @@
 //
 // Un thème peut fournir (tout est facultatif, sauf skin ou character) :
 //   skin(ch)                 construit le personnage (voir themes/shared.js)
+//   agentSkin(ch)            apparence des sous-agents, si elle diffère de skin
 //   character                classe qui remplace Character (même interface), pour des personnages articulés à part
 //   shell                    invite affichée dans le terminal
 //   sky, stars, fog, hemi, sun, exposure, bloom    ambiance

@@ -1,5 +1,6 @@
 // Thème Espace : station spatiale en orbite, et astronautes.
 import { buildAstronaut } from './astronaut.js';
+import { buildRocky } from './rocky.js';
 import { buildAsteroidTrain } from './asteroids.js';
 import { espaceDecor } from './decor.js';
 import { buildSatelliteTower } from './tower.js';
@@ -9,6 +10,8 @@ import { gift } from './gift.js';
 export default {
   id: 'espace',
   skin: buildAstronaut,
+  // Les agents sont de petits aliens à carapace de roche
+  agentSkin: buildRocky,
   gift,
   actions,
   shell: 'astro@station:~$',
