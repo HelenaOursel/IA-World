@@ -782,6 +782,28 @@ export class PandaCharacter {
         p.sLz = -0.2;
         p.tiltX = -0.05;
         break;
+      case 'roast':
+        // Debout au bord du feu, la patte tendue : il fait tourner la banane au-dessus des flammes.
+        p.sRx = -1.25 + Math.sin(t * 1.3 + this.phase) * 0.05;
+        p.sRz = 0.05;
+        p.eR = -0.05;
+        p.sLx = -0.35;
+        p.sLz = -0.15;
+        p.tiltX = 0.08;
+        p.hPitch = 0.25;
+        p.bob = Math.sin(t * 1.6 + this.phase) * 0.006;
+        break;
+      case 'eat':
+        // La banane contre la bouche, il croque en hochant la tête.
+        p.sRx = -1.85;
+        p.eR = -1.25;
+        p.sRz = -0.25;
+        p.sLx = -1.5;
+        p.eL = -1.2;
+        p.sLz = 0.3;
+        p.hPitch = 0.12 + Math.abs(Math.sin(t * 7)) * 0.08;
+        p.bob = Math.abs(Math.sin(t * 7)) * 0.012;
+        break;
       case 'ask':
         p.sRx = -2.9;
         p.sRz = 0.4 + Math.sin(t * 9) * 0.35;
@@ -839,6 +861,14 @@ export class PandaCharacter {
         f.expr = 'sleep';
         f.eyeY = 0.5;
         f.mouth = 0.5 + Math.sin(t * 1.2 + this.phase) * 0.5;
+        break;
+      case 'roast':
+        // Les yeux sur la banane qui grille
+        f.eyeY = -0.6;
+        f.eyeX = Math.sin(t * 0.6) * 0.2;
+        break;
+      case 'eat':
+        f.expr = 'happy';
         break;
       case 'doodle':
         f.expr = 'cheeky';

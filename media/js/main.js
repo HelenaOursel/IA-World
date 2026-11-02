@@ -257,6 +257,80 @@ function dropChip(x, y) {
 // Un robot qui s'ennuie à la borne va parfois gribouiller sur le tableau de planification.
 const DOODLE_START_LINES = ['Hihi…', 'Chut !', 'Personne regarde ?', 'Juste un petit dessin…', 'Le tableau est libre !'];
 const DOODLE_DONE_LINES = ['Joli, non ?', 'Chef-d’oeuvre !', 'Trop mignon !', 'Je signe ?', 'Bip boup, fini !'];
+
+// ------------------------------------------------------- banane grillée (Japon)
+
+const ROAST_START_LINES = ['Pause goûter !', 'Une petite banane ?', 'Miam, le feu est bien chaud !'];
+const ROAST_DONE_LINES = ['Grillée à point !', 'Trop bon <3', 'Toute caramélisée !', 'Encore une ?'];
+const ROAST_TIME = 7; // secondes au-dessus du feu
+const EAT_TIME = 2.4;
+
+/** Bâton libre au bord du feu (seul le thème Japon en a), ou undefined. */
+function freeStick() {
+  return st.dock.sticks?.find((s) => !s.user);
+}
+
+function startRoast(ch, stick) {
+  if (ch.stationKey) st[ch.stationKey].release(ch.id);
+  ch.stationKey = null;
+  ch.wandering = false;
+  stick.user = ch.id;
+  ch.roast = { stick, step: 'fetch', t: 0, sparkAt: 0 };
+  ch.goTo(stick.fetchSpot, 'idle');
+  hud.setActivityText(ch.id, '~ Fait griller une banane');
+}
+
+/** Repose le bâton au bord du feu (fini, interrompu, ou personnage qui s'en va). */
+function dropStick(ch) {
+  ch.roast?.stick.putBack();
+  ch.roast = null;
+}
+
+function updateRoaster(ch, dt) {
+  const job = ch.roast;
+  // Du vrai travail arrive : il repose le bâton et file.
+  if (!ch.idle || ch.leaving) {
+    dropStick(ch);
+    ch.react('surprise', 0.7);
+    return;
+  }
+  if (ch.moving) return;
+  job.t += dt;
+  const { stick } = job;
+  if (job.step === 'fetch') {
+    // Ramasse le bâton, y enfile une banane, puis va s'installer au bord du feu
+    stick.take(ch.armR.elbow);
+    ch.react('catch', 0.6);
+    if (Math.random() < 0.5) hud.say(ch.id, pickLine(ROAST_START_LINES), 'speech', '', 2.5, false);
+    ch.goTo(stick.roastSpot, 'roast');
+    job.step = 'roast';
+    job.t = 0;
+  } else if (job.step === 'roast') {
+    stick.roast(Math.min(1, job.t / ROAST_TIME));
+    // De temps en temps, une étincelle saute de la banane
+    if (job.t > job.sparkAt) {
+      job.sparkAt = job.t + 0.6 + Math.random() * 1.2;
+      effects.burst(stick.bananaPosition(new THREE.Vector3()), { count: 4, colors: ['#ffb347', '#ffd23f'], speed: 0.4, up: 0.8, life: 0.5, gravity: -1, size: 0.015, glow: 2 });
+    }
+    if (job.t >= ROAST_TIME) {
+      ch.setAction('eat');
+      job.step = 'eat';
+      job.t = 0;
+    }
+  } else if (job.step === 'eat') {
+    // Ramène la banane contre sa bouche, puis la croque en quelques bouchées
+    stick.slide(Math.min(1, job.t / 0.4));
+    stick.eat(Math.max(0, (job.t - 0.4) / (EAT_TIME - 0.4)));
+    if (job.t >= EAT_TIME) {
+      dropStick(ch);
+      ch.react('love', 1.6);
+      effects.heart(ch.topPosition(new THREE.Vector3()), 3);
+      if (Math.random() < 0.7) hud.say(ch.id, pickLine(ROAST_DONE_LINES), 'speech', '', 2.5, false);
+      moveTo(ch, 'dock', 'sleep');
+      hud.setActivityText(ch.id, SLEEP_TEXT);
+    }
+  }
+}
 const BOARD_W = 2.75; // largeur de l'écran du tableau (m), pour 640 px de canvas
 
 function canDoodle() {
@@ -441,6 +515,7 @@ function despawnAgent(id, animated = true) {
 }
 
 function removeCharacter(ch) {
+  dropStick(ch);
   for (const s of Object.values(st)) s.release(ch.id);
   scene.remove(ch.root);
   ch.dispose();
@@ -571,7 +646,7 @@ function throwToBin(ch) {
       if (job.real) return;
       ch.react(ok ? 'jump' : 'surprise', ok ? 1.2 : 0.9);
       hud.say(ch.id, pickLine(ok ? SCORE_LINES : MISS_LINES), 'speech', '', 2, false);
-    });
+    }, bin.burst);
     ch.setAction('idle');
   }, 250);
 }
@@ -896,13 +971,18 @@ function updateCharacters(now, dt, t) {
 
     if (ch.pendingThrow && !ch.moving && ch.stationKey === 'trash') throwToBin(ch);
 
-    // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille, ou une bêtise au tableau.
+    // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille (si le thème le permet),
+    // une bêtise au tableau, ou une banane grillée au feu de camp (Japon).
     if (ch.doodle) updateDoodler(ch, dt);
+    else if (ch.roast) updateRoaster(ch, dt);
     else if (ch.idle && !ch.moving) {
+      let stick;
       if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && canDoodle()) {
         startDoodle(ch);
+      } else if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.03 && (stick = freeStick())) {
+        startRoast(ch, stick);
       } else if (!ch.wandering && Math.random() < dt * 0.03) {
-        if (Math.random() < 0.4) {
+        if (theme.idleThrow !== false && Math.random() < 0.4) {
           moveTo(ch, 'trash', 'aim');
           ch.pendingThrow = { kind: 'ball', real: false };
         } else {

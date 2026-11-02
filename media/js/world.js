@@ -439,7 +439,8 @@ function floorTexture(theme) {
   g.setLineDash([26, 18]);
   g.strokeStyle = mark;
   g.lineWidth = 5;
-  for (const [x, z] of Object.values(LAYOUT)) {
+  for (const [key, [x, z]] of Object.entries(LAYOUT)) {
+    if (key === 'trash' && theme.trash === 'fire') continue;
     const [a, b] = px(x, z);
     g.save();
     g.translate(a, b);
@@ -699,7 +700,7 @@ function buildAssembly(st, gate) {
   zoneMarker(st);
 }
 
-function buildTrash(st, showLabel = true) {
+function buildTrash(st) {
   // Le robot se place devant la corbeille, côté DOCS, sans gêner le tableau de planification.
   st.dir.set(-0.25, 0, 0.97).normalize();
   st.side.set(-st.dir.z, 0, st.dir.x);
@@ -758,11 +759,9 @@ function buildTrash(st, showLabel = true) {
   lid.add(lidRim);
   body.add(lid);
 
-  if (showLabel) {
-    const l = label(STATION_NAMES.trash, c);
-    l.position.set(0, 1.2, 0);
-    g.add(l);
-  }
+  const l = label(STATION_NAMES.trash, c);
+  l.position.set(0, 1.2, 0);
+  g.add(l);
   const light = new THREE.PointLight(c, 1.2, 2.2, 1.8);
   light.position.set(0, 0.9, 0.4);
   g.add(light);
@@ -818,6 +817,18 @@ function buildDock(st, scene, theme) {
   g.add(light);
   Object.assign(st, { rings, light });
   scene.add(g);
+}
+
+/** Sans corbeille : on jette dans le feu de camp, depuis le bord du feu côté caméra. */
+function burnInFire(st) {
+  st.pos.set(0, 0, 0);
+  st.group.position.set(0, 0, 0);
+  st.dir.set(Math.sin(0.4), 0, Math.cos(0.4));
+  st.side.set(-st.dir.z, 0, st.dir.x);
+  st.group.rotation.y = Math.atan2(st.dir.x, st.dir.z);
+  st.spotDist = 1.3;
+  // L'objet tombe au cœur des flammes, qui crachent des étincelles
+  Object.assign(st, { mouthLocal: new THREE.Vector3(0, 0.3, 0), burst: ['#ff8a1f', '#ffd23f', '#ff3d14'], openLid: () => {} });
 }
 
 // ----------------------------------------------------------------- monde
@@ -896,7 +907,8 @@ export function buildWorld(scene, theme = {}) {
 
   buildPlan(stations.plan);
   buildAssembly(stations.agent, theme.gate);
-  buildTrash(stations.trash, theme.trashLabel !== false);
+  if (theme.trash === 'fire') burnInFire(stations.trash);
+  else buildTrash(stations.trash);
   for (const st of Object.values(stations)) scene.add(st.group);
   stations.dock = new Dock();
   buildDock(stations.dock, scene, theme);
@@ -925,9 +937,11 @@ export function buildWorld(scene, theme = {}) {
     dock.animateTower?.(t);
 
     const bin = stations.trash;
-    bin.lidTimer = Math.max(0, bin.lidTimer - dt);
-    const lidGoal = bin.lidTimer > 0 ? -1.25 : 0;
-    bin.lid.rotation.x += (lidGoal - bin.lid.rotation.x) * Math.min(1, dt * (lidGoal ? 14 : 6));
+    if (bin.lid) {
+      bin.lidTimer = Math.max(0, bin.lidTimer - dt);
+      const lidGoal = bin.lidTimer > 0 ? -1.25 : 0;
+      bin.lid.rotation.x += (lidGoal - bin.lid.rotation.x) * Math.min(1, dt * (lidGoal ? 14 : 6));
+    }
 
     const bay = stations.agent;
     bay.power = Math.max(0, bay.power - dt * 0.35);

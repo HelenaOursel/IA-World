@@ -16,7 +16,9 @@ export default {
   gate: { build: buildTorii, curtain: { h: 1.5, y: 0.86 }, labelY: 2.85, base: 'stone' },
   // Une seule baie de serveurs (entre Code et Terminal) : cerisier et bambous prennent les autres places.
   racks: [[6.7, -2.4]],
-  trashLabel: false,
+  // Pas de corbeille : on jette les fichiers au feu, et on ne s'amuse pas à faire des paniers.
+  trash: 'fire',
+  idleThrow: false,
   gift: 'bamboo',
   sleepText: 'zZz Au coin du feu',
   decor: japonDecor,

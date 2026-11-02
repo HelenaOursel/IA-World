@@ -164,7 +164,7 @@ export class Effects {
    * Lance un objet en cloche de `from` vers la bouche de la corbeille `to`.
    * S'il rate (`hit` faux), il rebondit au sol à côté. `onLand(hit)` est appelé à la fin.
    */
-  throwItem(from, to, kind, hit, onLand) {
+  throwItem(from, to, kind, hit, onLand, burst = ['#7bd88f', '#ffffff']) {
     const m = buildTrashItem(kind);
     m.position.copy(from);
     m.castShadow = true;
@@ -174,7 +174,7 @@ export class Effects {
       const side = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize().multiplyScalar(0.65);
       end.add(side).setY(0.06);
     }
-    this.throws.push({ m, t: 0, from: from.clone(), end, hit, onLand, landed: false, bounce: 0 });
+    this.throws.push({ m, t: 0, from: from.clone(), end, hit, onLand, landed: false, bounce: 0, burst });
   }
 
   /** Petits cœurs qui s'envolent en se dandinant. */
@@ -333,7 +333,7 @@ export class Effects {
         if (x < 1) return true;
         th.landed = true;
         th.t = 0;
-        if (th.hit) this.burst(th.end, { count: 10, colors: ['#7bd88f', '#ffffff'], speed: 0.6, up: 1.4, life: 0.6, gravity: -2, size: 0.03, glow: 1.6 });
+        if (th.hit) this.burst(th.end, { count: 10, colors: th.burst, speed: 0.6, up: 1.4, life: 0.6, gravity: -2, size: 0.03, glow: 1.6 });
         th.onLand?.(th.hit);
       }
       if (th.hit) {
