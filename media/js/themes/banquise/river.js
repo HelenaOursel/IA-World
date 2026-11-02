@@ -2,6 +2,15 @@
 import * as THREE from '../../../vendor/three.module.min.js';
 import { mat, mesh, sphere } from '../../geometry.js';
 
+/** Tracé de la rivière (x, z), de la source jusqu'au bord de la banquise (la chute est ajoutée ensuite). */
+export const RIVER_POINTS = [
+  [-1.9, 5.05],
+  [-1.1, 5.95],
+  [0.1, 5.6],
+  [0.95, 6.3],
+  [1.2, 7.1],
+];
+
 /** Texture d'eau rayée dans le sens du courant (v = sens de l'écoulement). */
 function streakTexture(base, streak, count, foam) {
   const c = document.createElement('canvas');
@@ -58,15 +67,8 @@ export function buildRiver(scene, place) {
   scene.add(g);
   const W = 0.78;
   const { edgeZ } = place;
-  const curve = new THREE.CatmullRomCurve3([
-    // Part d'un trou dans la glace, loin du poste RÉSEAU, et finit en chute dans la mer.
-    new THREE.Vector3(-1.9, 0, 5.05),
-    new THREE.Vector3(-1.1, 0, 5.95),
-    new THREE.Vector3(0.1, 0, 5.6),
-    new THREE.Vector3(0.95, 0, 6.3),
-    new THREE.Vector3(1.2, 0, 7.1),
-    new THREE.Vector3(1.3, 0, edgeZ),
-  ]);
+  // Part d'un trou dans la glace, loin du poste RÉSEAU, et finit en chute dans la mer.
+  const curve = new THREE.CatmullRomCurve3([...RIVER_POINTS.map(([x, z]) => new THREE.Vector3(x, 0, z)), new THREE.Vector3(1.3, 0, edgeZ)]);
   const len = curve.getLength();
 
   // Deux couches d'eau qui défilent à des vitesses différentes : le courant se voit

@@ -1,10 +1,14 @@
 // Thème Slime : marais lumineux, et slimes.
 import { paintGoo, slimeDecor } from './decor.js';
 import { buildSlime } from './slime.js';
+import { actions } from './actions.js';
+import { gift } from './gift.js';
 
 export default {
   id: 'slime',
   skin: buildSlime,
+  gift,
+  actions,
   shell: 'slime@marais:~$',
   sky: { top: '#16052b', mid: '#5b1d70', bottom: '#ff8fb8' },
   stars: 700,

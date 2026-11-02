@@ -42,6 +42,7 @@ export type WorldEvent =
   | { type: 'prompt'; agentId: string; text: string }
   | { type: 'error'; agentId: string; text: string }
   | { type: 'turnEnd'; agentId: string }
+  | { type: 'interrupt'; agentId: string }
   | { type: 'todos'; todos: Todo[] }
   | { type: 'spawn'; agent: AgentInfo }
   | { type: 'despawn'; id: string }

@@ -261,7 +261,7 @@ function drawFace(g, w, h, s, sp) {
 }
 
 export class PandaCharacter {
-  constructor({ id, name, agentType = '', color, isMain = false }) {
+  constructor({ id, name, agentType = '', color, isMain = false, poses = {} }) {
     this.id = id;
     this.name = name;
     this.agentType = agentType;
@@ -279,7 +279,10 @@ export class PandaCharacter {
     this.action = 'idle';
     this.path = [];
     this.face = null;
-    this.speed = isMain ? 2.3 : 2.7;
+    this.speed = this.baseSpeed = isMain ? 2.3 : 2.7;
+    // Poses propres au thème (themes/<id>/actions.js) et pose pendant les déplacements
+    this.poses = poses;
+    this.moveAction = null;
     this.phase = Math.random() * 6;
     this.reaction = null;
     this.scaleAnim = null;
@@ -597,7 +600,7 @@ export class PandaCharacter {
       this.root.rotation.y = lerpAngle(this.root.rotation.y, this.face, 1 - Math.exp(-dt * 6));
     }
 
-    const action = rolling ? 'roll' : moving ? 'drive' : this.action;
+    const action = rolling ? 'roll' : moving ? this.moveAction ?? 'drive' : this.action;
     const target = this.computePose(action, t);
     const face = this.computeFace(action, t, dt);
     this.applyReaction(target, face, dt, t);
@@ -648,6 +651,11 @@ export class PandaCharacter {
     p.eR = -0.25;
     p.bob = Math.sin(t * 2 + this.phase) * 0.006;
     const type = (offset) => -1.45 + Math.sin(t * 16 + offset) * 0.07;
+    const custom = this.poses[action];
+    if (custom?.pose) {
+      custom.pose(p, t, this);
+      return p;
+    }
 
     switch (action) {
       case 'drive': {
@@ -823,7 +831,8 @@ export class PandaCharacter {
 
   computeFace(action, t, dt) {
     const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0 };
-    switch (action) {
+    if (this.poses[action]?.face) this.poses[action].face(f, t, this);
+    else switch (action) {
       case 'type':
       case 'read':
       case 'search':

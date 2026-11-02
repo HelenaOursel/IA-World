@@ -243,7 +243,7 @@ class TrackedSession {
       for (const ev of parseEntry(o, this.info.mainId, true)) {
         if (ev.type === 'todos') this.setTodos(ev.todos, this.lastActivityTime);
         if (ev.type === 'activity') this.lastActivities.set(this.info.mainId, ev);
-        if (ev.type === 'turnEnd') this.lastActivities.delete(this.info.mainId);
+        if (ev.type === 'turnEnd' || ev.type === 'interrupt') this.lastActivities.delete(this.info.mainId);
       }
     }
     this.info.title = title;
@@ -375,7 +375,7 @@ class TrackedSession {
       }
       if (ev.type === 'todos') this.setTodos(ev.todos, Date.now());
       if (ev.type === 'activity') this.lastActivities.set(ev.agentId, ev);
-      if (ev.type === 'turnEnd') this.lastActivities.delete(ev.agentId);
+      if (ev.type === 'turnEnd' || ev.type === 'interrupt') this.lastActivities.delete(ev.agentId);
       if ('agentId' in ev && ev.agentId !== this.info.mainId && !this.agents.get(ev.agentId)?.active) continue;
       this.lastActivityTime = Date.now();
       this.emit(ev);

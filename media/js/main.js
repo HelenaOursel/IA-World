@@ -81,7 +81,6 @@ let hasSession = false;
 const hud = new Hud(app, {
   themes: THEME_LIST,
   theme: theme.id,
-  gift: theme.gift,
   toggleDemo: () => (demo.running ? stopDemo() : startDemo()),
   toggleRotate: () => {
     cam.autoRotate = !cam.autoRotate;
@@ -91,8 +90,9 @@ const hud = new Hud(app, {
   follow: (id) => setFollow(followId === id ? null : id),
   pickSession: () => post({ type: 'pickSession' }),
   setTheme: (id) => requestTheme(id),
-  chipHover: (x, y) => chipHover(x, y),
-  dropChip: (x, y) => dropChip(x, y),
+  gift: theme.gift,
+  giftHover: (x, y) => giftHover(x, y),
+  dropGift: (x, y) => dropGift(x, y),
 });
 
 // ----------------------------------------------------------------- caméra
@@ -213,10 +213,6 @@ function fishAt(x, y) {
 // ------------------------------------------------------------ interactions
 
 const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz <3', 'Encore !', 'Ronron…', 'Trop doux !'];
-const BAMBOO = theme.gift === 'bamboo';
-const GIFT_LINES = BAMBOO
-  ? ['Du bambou ! Merci <3', 'Miam, tout croquant !', 'Trop bien, merci !', 'Mon préféré !', 'Crunch crunch <3']
-  : ['Une puce ! Merci <3', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue <3'];
 const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
 function petRobot(ch) {
@@ -232,23 +228,24 @@ function petRobot(ch) {
   }
 }
 
-/** Le robot sous la puce tend les bras pour l'attraper. */
-function chipHover(x, y) {
+/** Le personnage sous le cadeau tend les bras pour l'attraper. */
+function giftHover(x, y) {
   const ch = robotAt(x, y);
   if (ch && ch.reaction?.type !== 'love') ch.react('catch', 0.35);
 }
 
-function dropChip(x, y) {
+function dropGift(x, y) {
   const ch = robotAt(x, y);
   if (!ch) return false;
   const target = () => ch.root.localToWorld(new THREE.Vector3(0, ch.bodyY, ch.size * 0.3));
   ch.react('catch', 1.3);
-  effects.chip(target().lerp(camera.position, 0.22), target, null, () => {
+  const gift = theme.gift;
+  effects.gift(gift, target().lerp(camera.position, 0.22), target, null, () => {
     ch.react('love', 2.4);
     effects.heart(ch.topPosition(new THREE.Vector3()), 6);
-    hud.say(ch.id, pickLine(GIFT_LINES), 'speech', KIND_ICONS.love, 3, false);
-    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `${BAMBOO ? 'donne du bambou' : 'donne une puce'} à ${ch.name}`, ch.id);
-  }, theme.gift);
+    hud.say(ch.id, pickLine(gift.lines), 'speech', KIND_ICONS.love, 3, false);
+    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `donne ${gift.article} à ${ch.name}`, ch.id);
+  });
   return true;
 }
 
@@ -257,80 +254,6 @@ function dropChip(x, y) {
 // Un robot qui s'ennuie à la borne va parfois gribouiller sur le tableau de planification.
 const DOODLE_START_LINES = ['Hihi…', 'Chut !', 'Personne regarde ?', 'Juste un petit dessin…', 'Le tableau est libre !'];
 const DOODLE_DONE_LINES = ['Joli, non ?', 'Chef-d’oeuvre !', 'Trop mignon !', 'Je signe ?', 'Bip boup, fini !'];
-
-// ------------------------------------------------------- banane grillée (Japon)
-
-const ROAST_START_LINES = ['Pause goûter !', 'Une petite banane ?', 'Miam, le feu est bien chaud !'];
-const ROAST_DONE_LINES = ['Grillée à point !', 'Trop bon <3', 'Toute caramélisée !', 'Encore une ?'];
-const ROAST_TIME = 7; // secondes au-dessus du feu
-const EAT_TIME = 2.4;
-
-/** Bâton libre au bord du feu (seul le thème Japon en a), ou undefined. */
-function freeStick() {
-  return st.dock.sticks?.find((s) => !s.user);
-}
-
-function startRoast(ch, stick) {
-  if (ch.stationKey) st[ch.stationKey].release(ch.id);
-  ch.stationKey = null;
-  ch.wandering = false;
-  stick.user = ch.id;
-  ch.roast = { stick, step: 'fetch', t: 0, sparkAt: 0 };
-  ch.goTo(stick.fetchSpot, 'idle');
-  hud.setActivityText(ch.id, '~ Fait griller une banane');
-}
-
-/** Repose le bâton au bord du feu (fini, interrompu, ou personnage qui s'en va). */
-function dropStick(ch) {
-  ch.roast?.stick.putBack();
-  ch.roast = null;
-}
-
-function updateRoaster(ch, dt) {
-  const job = ch.roast;
-  // Du vrai travail arrive : il repose le bâton et file.
-  if (!ch.idle || ch.leaving) {
-    dropStick(ch);
-    ch.react('surprise', 0.7);
-    return;
-  }
-  if (ch.moving) return;
-  job.t += dt;
-  const { stick } = job;
-  if (job.step === 'fetch') {
-    // Ramasse le bâton, y enfile une banane, puis va s'installer au bord du feu
-    stick.take(ch.armR.elbow);
-    ch.react('catch', 0.6);
-    if (Math.random() < 0.5) hud.say(ch.id, pickLine(ROAST_START_LINES), 'speech', '', 2.5, false);
-    ch.goTo(stick.roastSpot, 'roast');
-    job.step = 'roast';
-    job.t = 0;
-  } else if (job.step === 'roast') {
-    stick.roast(Math.min(1, job.t / ROAST_TIME));
-    // De temps en temps, une étincelle saute de la banane
-    if (job.t > job.sparkAt) {
-      job.sparkAt = job.t + 0.6 + Math.random() * 1.2;
-      effects.burst(stick.bananaPosition(new THREE.Vector3()), { count: 4, colors: ['#ffb347', '#ffd23f'], speed: 0.4, up: 0.8, life: 0.5, gravity: -1, size: 0.015, glow: 2 });
-    }
-    if (job.t >= ROAST_TIME) {
-      ch.setAction('eat');
-      job.step = 'eat';
-      job.t = 0;
-    }
-  } else if (job.step === 'eat') {
-    // Ramène la banane contre sa bouche, puis la croque en quelques bouchées
-    stick.slide(Math.min(1, job.t / 0.4));
-    stick.eat(Math.max(0, (job.t - 0.4) / (EAT_TIME - 0.4)));
-    if (job.t >= EAT_TIME) {
-      dropStick(ch);
-      ch.react('love', 1.6);
-      effects.heart(ch.topPosition(new THREE.Vector3()), 3);
-      if (Math.random() < 0.7) hud.say(ch.id, pickLine(ROAST_DONE_LINES), 'speech', '', 2.5, false);
-      moveTo(ch, 'dock', 'sleep');
-      hud.setActivityText(ch.id, SLEEP_TEXT);
-    }
-  }
-}
 const BOARD_W = 2.75; // largeur de l'écran du tableau (m), pour 640 px de canvas
 
 function canDoodle() {
@@ -432,7 +355,7 @@ const isMainId = (id) => id === 'main' || id.startsWith('main:');
 function ensureMain(id = 'main', title = '', animated = false) {
   if (chars.has(id)) return chars.get(id);
   const n = mainCount++;
-  const ch = new CharacterClass({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true, skin: theme.skin });
+  const ch = new CharacterClass({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true, skin: theme.skin, poses: theme.actions?.poses });
   addCharacter(ch);
   const spot = st.dock.claim(id);
   ch.stationKey = 'dock';
@@ -479,7 +402,7 @@ function bayCenter() {
 
 function spawnAgent(info, animated = true) {
   if (chars.has(info.id)) return chars.get(info.id);
-  const ch = new CharacterClass({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin });
+  const ch = new CharacterClass({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin, poses: theme.actions?.poses });
   ch.ownerId = info.ownerId;
   addCharacter(ch);
   if (animated) {
@@ -515,7 +438,7 @@ function despawnAgent(id, animated = true) {
 }
 
 function removeCharacter(ch) {
-  dropStick(ch);
+  if (ch.themeAct) endThemeAction(ch);
   for (const s of Object.values(st)) s.release(ch.id);
   scene.remove(ch.root);
   ch.dispose();
@@ -651,6 +574,57 @@ function throwToBin(ch) {
   }, 250);
 }
 
+// --------------------------------------------------- activités du thème
+
+// Outils donnés aux activités des thèmes (themes/<id>/actions.js).
+const actionTools = {
+  scene,
+  effects,
+  stations: st,
+  say: (ch, text, seconds = 2.5) => hud.say(ch.id, text, 'speech', '', seconds, false),
+  /** Marche vers un point ; `face` : orientation à l'arrivée. */
+  walk: (ch, pos, action = 'idle', face = null) => ch.goTo({ pos, face }, action),
+  /** Point au hasard sur la plate-forme, à l'écart de la tour centrale. */
+  randomSpot: (min = 3, max = 5.2) => {
+    const a = Math.random() * Math.PI * 2, r = min + Math.random() * (max - min);
+    return new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r);
+  },
+  /** Le cadeau du thème vole depuis `from` jusqu'au personnage. */
+  giftTo: (ch, from, onArrive) => effects.gift(theme.gift, from, () => ch.root.localToWorld(new THREE.Vector3(0, ch.bodyY, ch.size * 0.3)), null, onArrive),
+};
+
+function startThemeAction(ch) {
+  const list = theme.actions.idle;
+  const total = list.reduce((s, a) => s + (a.weight ?? 1), 0);
+  let r = Math.random() * total;
+  const def = list.find((a) => (r -= a.weight ?? 1) < 0) ?? list[0];
+  if (ch.stationKey) st[ch.stationKey].release(ch.id);
+  ch.stationKey = null;
+  ch.wandering = false;
+  ch.themeAct = { def, t: 0, state: {} };
+  def.start(ch, actionTools, ch.themeAct.state);
+  hud.setActivityText(ch.id, '~ ' + def.label);
+}
+
+function endThemeAction(ch) {
+  const a = ch.themeAct;
+  ch.themeAct = null;
+  a.def.stop?.(ch, actionTools, a.state);
+  ch.moveAction = null;
+  ch.speed = ch.baseSpeed;
+}
+
+function updateThemeAction(ch, dt) {
+  const a = ch.themeAct;
+  // Du vrai travail arrive : l'activité s'arrête net.
+  if (!ch.idle || ch.leaving) return endThemeAction(ch);
+  a.t += dt;
+  if (!a.def.update(ch, dt, a.t, actionTools, a.state)) return;
+  endThemeAction(ch);
+  moveTo(ch, 'dock', 'sleep');
+  hud.setActivityText(ch.id, SLEEP_TEXT);
+}
+
 function setTodos(todos) {
   st.plan.todos = todos || [];
   // Le plan revient au tableau : les gribouillis sont effacés.
@@ -671,6 +645,17 @@ function onError(ch, text) {
     st.bash.screen.redraw();
   }
   logEvent(ch, KIND_ICONS.error, text, 'error');
+}
+
+/** Interrompu par l'utilisateur : il abandonne ce qu'il restait à jouer et retourne à la borne. */
+function onInterrupt(ch) {
+  const q = queues.get(ch.id);
+  if (q) q.items.length = 0;
+  ch.pendingThrow = null;
+  ch.react('surprise', 0.9);
+  hud.say(ch.id, "Stop ! J'arrête.", 'error', KIND_ICONS.error, 3);
+  logEvent(ch, KIND_ICONS.error, "interrompu par l'utilisateur", 'interrupt');
+  ch.idleAt = performance.now() + 1200;
 }
 
 function onTurnEnd(ch) {
@@ -765,6 +750,12 @@ function handleEvent(ev) {
       else if (!chars.has(ev.agentId)) spawnAgent({ id: ev.agentId, name: 'Agent', agentType: 'agent' });
       enqueue(ev.agentId, ev);
       break;
+    case 'interrupt': {
+      // Pas de file d'attente : le personnage doit s'arrêter tout de suite.
+      const ch = isMainId(ev.agentId) ? ensureMain(ev.agentId) : chars.get(ev.agentId);
+      if (ch) onInterrupt(ch);
+      break;
+    }
     case 'prompt': {
       const id = ev.agentId || 'main';
       ensureMain(id);
@@ -971,16 +962,14 @@ function updateCharacters(now, dt, t) {
 
     if (ch.pendingThrow && !ch.moving && ch.stationKey === 'trash') throwToBin(ch);
 
-    // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille (si le thème le permet),
-    // une bêtise au tableau, ou une banane grillée au feu de camp (Japon).
-    if (ch.doodle) updateDoodler(ch, dt);
-    else if (ch.roast) updateRoaster(ch, dt);
+    // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille, ou une bêtise au tableau.
+    if (ch.themeAct) updateThemeAction(ch, dt);
+    else if (ch.doodle) updateDoodler(ch, dt);
     else if (ch.idle && !ch.moving) {
-      let stick;
-      if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && canDoodle()) {
+      if (!ch.wandering && theme.actions?.idle?.length && Math.random() < dt * 0.03) {
+        startThemeAction(ch);
+      } else if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && canDoodle()) {
         startDoodle(ch);
-      } else if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.03 && (stick = freeStick())) {
-        startRoast(ch, stick);
       } else if (!ch.wandering && Math.random() < dt * 0.03) {
         if (theme.idleThrow !== false && Math.random() < 0.4) {
           moveTo(ch, 'trash', 'aim');

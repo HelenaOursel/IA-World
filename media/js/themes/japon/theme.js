@@ -1,7 +1,9 @@
 // Thème Japon : jardin d'herbe autour d'un feu de camp, cerisier, bambous, torii, rivière zen et pandas.
 // Les pandas ont leurs propres articulations (quatre pattes, roulades, queue) : ils remplacent toute la classe Character.
+import { actions } from './actions.js';
 import { buildCampfire } from './campfire.js';
 import { japonDecor, paintGrass } from './decor.js';
+import { gift } from './gift.js';
 import { PandaCharacter } from './panda.js';
 import { buildZenRiver } from './river.js';
 import { buildTorii } from './torii.js';
@@ -19,7 +21,8 @@ export default {
   // Pas de corbeille : on jette les fichiers au feu, et on ne s'amuse pas à faire des paniers.
   trash: 'fire',
   idleThrow: false,
-  gift: 'bamboo',
+  gift,
+  actions,
   sleepText: 'zZz Au coin du feu',
   decor: japonDecor,
 };
