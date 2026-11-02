@@ -64,6 +64,18 @@
           "type": "boolean",
           "default": false,
           "description": "Ouvrir automatiquement le monde quand une session Claude devient active."
+        },
+        "iaworld.theme": {
+          "type": "string",
+          "default": "usine",
+          "enum": ["usine", "banquise", "espace", "slime"],
+          "enumDescriptions": [
+            "Usine futuriste et robots cubiques",
+            "Banquise enneigée et pingouins",
+            "Station spatiale et astronautes",
+            "Marais lumineux et slimes"
+          ],
+          "description": "Apparence de l'univers et des personnages."
         }
       }
     }

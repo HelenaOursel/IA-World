@@ -18,6 +18,16 @@ function readOptions(): WatcherOptions {
   };
 }
 
+const THEMES = ['usine', 'banquise', 'espace', 'slime'];
+
+// Thème choisi depuis le monde, appliqué sans attendre que le réglage soit enregistré.
+let chosenTheme: string | undefined;
+
+function currentTheme(): string {
+  const theme = chosenTheme ?? vscode.workspace.getConfiguration('iaworld').get<string>('theme', 'usine');
+  return THEMES.includes(theme) ? theme : 'usine';
+}
+
 class WorldPanel {
   static current: WorldPanel | undefined;
   private readonly disposables: vscode.Disposable[] = [];
@@ -43,7 +53,7 @@ class WorldPanel {
     return WorldPanel.current;
   }
 
-  private constructor(private readonly panel: vscode.WebviewPanel, context: vscode.ExtensionContext) {
+  private constructor(private readonly panel: vscode.WebviewPanel, private readonly context: vscode.ExtensionContext) {
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, 'media', 'icon.png');
     panel.webview.html = this.html(panel.webview, context.extensionUri);
     panel.onDidDispose(() => this.dispose(), null, this.disposables);
@@ -56,11 +66,33 @@ class WorldPanel {
           queued.forEach((m) => this.post(m));
         }
         if (msg?.type === 'pickSession') vscode.commands.executeCommand('iaworld.pickSession');
+        if (msg?.type === 'setTheme' && THEMES.includes(msg.theme)) {
+          // Le monde change tout de suite ; le réglage est enregistré ensuite pour les prochaines ouvertures.
+          chosenTheme = msg.theme;
+          this.reload();
+          vscode.workspace
+            .getConfiguration('iaworld')
+            .update('theme', msg.theme, vscode.ConfigurationTarget.Global)
+            .then(undefined, (err) => console.error('[IA World] thème non enregistré :', err));
+        }
       },
       null,
       this.disposables,
     );
   }
+
+  /** Recharge la page (nouveau thème) ; l'état est renvoyé quand elle signale 'ready'. */
+  reload(): void {
+    this.pending = [];
+    this.panel.webview.html = this.html(this.panel.webview, this.context.extensionUri);
+  }
+
+  /** Recharge seulement si le thème affiché n'est plus le bon (évite un double rechargement). */
+  reloadIfThemeChanged(): void {
+    if (this.loadedTheme !== currentTheme()) this.reload();
+  }
+
+  private loadedTheme = '';
 
   post(msg: unknown): void {
     if (this.pending) {
@@ -72,6 +104,7 @@ class WorldPanel {
   }
 
   private html(webview: vscode.Webview, root: vscode.Uri): string {
+    this.loadedTheme = currentTheme();
     const nonce = crypto.randomBytes(16).toString('base64');
     const media = (p: string) => webview.asWebviewUri(vscode.Uri.joinPath(root, 'media', p));
     const csp = [
@@ -90,7 +123,7 @@ class WorldPanel {
 <link rel="stylesheet" href="${media('world.css')}">
 <title>IA World</title>
 </head>
-<body>
+<body data-theme="${this.loadedTheme}">
 <div id="app"></div>
 <script type="module" nonce="${nonce}" src="${media('js/main.js')}"></script>
 </body>
@@ -151,6 +184,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('iaworld')) watcher.configure(readOptions());
+      if (e.affectsConfiguration('iaworld.theme')) {
+        // Le réglage fait foi dès qu'il est enregistré (ou modifié à la main).
+        chosenTheme = undefined;
+        WorldPanel.current?.reloadIfThemeChanged();
+      }
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => watcher.configure(readOptions())),
   );

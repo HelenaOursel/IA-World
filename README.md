@@ -22,6 +22,18 @@ Le prompt de l'utilisateur arrive comme un signal capté par l'antenne du robot,
 Rien n'est réellement supprimé par le monde 3D : la corbeille illustre seulement ce que fait Claude, et les robots
 inactifs s'y amusent à lancer des boules de papier.
 
+## Thèmes
+
+Le menu **Thème**, en bas à droite du monde, change l'apparence de l'univers et des personnages.
+La disposition des postes reste la même, pour que ce que font les personnages reste lisible.
+
+| Thème    | Personnages  | Univers                                                       |
+| -------- | ------------ | ------------------------------------------------------------- |
+| Usine    | robots       | plate-forme d'usine futuriste flottant dans l'espace (défaut) |
+| Banquise | pingouins    | banquise enneigée sur la mer, igloos, sapins, neige qui tombe |
+| Espace   | astronautes  | station spatiale, planète à anneau, astéroïdes, panneaux solaires |
+| Slime    | slimes       | marais lumineux, champignons, flaques de gelée et bulles      |
+
 ## Utilisation
 
 - Cliquer sur **IA World** dans la barre d'état, ou lancer la commande **IA World: Ouvrir le monde**.
@@ -47,6 +59,7 @@ Par défaut, elle suit la session la plus récente du workspace ouvert.
 | `iaworld.claudeDir`         | (vide)  | Dossier Claude ; vide = `$CLAUDE_CONFIG_DIR` ou `~/.claude`   |
 | `iaworld.followAllProjects` | `false` | Suivre la session la plus récente de n'importe quel projet    |
 | `iaworld.autoOpen`          | `false` | Ouvrir le monde automatiquement quand Claude se met au travail |
+| `iaworld.theme`             | `usine` | Thème de l'univers : `usine`, `banquise`, `espace` ou `slime`   |
 
 ## Développement
 

@@ -10,9 +10,12 @@ import { Demo } from './demo.js';
 import { eraseDoodle, makeDoodle } from './doodles.js';
 import { Effects } from './effects.js';
 import { Hud, KIND_ICONS, plainText } from './hud.js';
+import { THEMES, getTheme } from './themes.js';
 import { buildWorld, docRows, randomCodeRow } from './world.js';
 
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+// Thème fourni par l'extension (data-theme), ou par ?theme= hors de VS Code.
+const theme = getTheme(document.body.dataset.theme || new URLSearchParams(location.search).get('theme'));
 const post = (m) => vscode?.postMessage(m);
 
 // type d'activité -> [poste, animation]
@@ -42,7 +45,7 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.1;
+renderer.toneMappingExposure = theme.exposure ?? 1.1;
 app.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -51,13 +54,13 @@ scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
 scene.environmentIntensity = 0.35;
 
 const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 220);
-const world = buildWorld(scene);
+const world = buildWorld(scene, theme);
 const st = world.stations;
 const effects = new Effects(scene);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.45, 0.85);
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), theme.bloom?.strength ?? 0.55, 0.45, theme.bloom?.threshold ?? 0.85);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 
@@ -73,6 +76,8 @@ const sessions = new Map(); // mainId -> SessionInfo
 let hasSession = false;
 
 const hud = new Hud(app, {
+  themes: Object.values(THEMES).map((t) => ({ id: t.id, name: t.name })),
+  theme: theme.id,
   toggleDemo: () => (demo.running ? stopDemo() : startDemo()),
   toggleRotate: () => {
     cam.autoRotate = !cam.autoRotate;
@@ -81,6 +86,7 @@ const hud = new Hud(app, {
   resetCamera: () => resetCamera(),
   follow: (id) => setFollow(followId === id ? null : id),
   pickSession: () => post({ type: 'pickSession' }),
+  setTheme: (id) => requestTheme(id),
   chipHover: (x, y) => chipHover(x, y),
   dropChip: (x, y) => dropChip(x, y),
 });
@@ -94,6 +100,18 @@ const camGoal = { ...CAM_HOME };
 function resetCamera() {
   Object.assign(camGoal, CAM_HOME);
   setFollow(null);
+}
+
+/** Demande un autre thème : l'extension recharge le monde. Sans réponse, c'est qu'elle n'est pas à jour. */
+function requestTheme(id) {
+  if (!vscode) {
+    location.search = '?theme=' + id;
+    return;
+  }
+  hud.notice('Chargement du thème…');
+  post({ type: 'setTheme', theme: id });
+  // Si la page est rechargée, ce minuteur disparaît avec elle.
+  setTimeout(() => hud.notice("Le thème n'a pas pu être appliqué : recharge la fenêtre VS Code (Ctrl+Maj+P puis « Developer: Reload Window »).", 12), 3000);
 }
 
 function setFollow(id) {
@@ -318,7 +336,7 @@ const isMainId = (id) => id === 'main' || id.startsWith('main:');
 function ensureMain(id = 'main', title = '', animated = false) {
   if (chars.has(id)) return chars.get(id);
   const n = mainCount++;
-  const ch = new Character({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true });
+  const ch = new Character({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true, skin: theme.skin });
   addCharacter(ch);
   const spot = st.dock.claim(id);
   ch.stationKey = 'dock';
@@ -365,7 +383,7 @@ function bayCenter() {
 
 function spawnAgent(info, animated = true) {
   if (chars.has(info.id)) return chars.get(info.id);
-  const ch = new Character({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType) });
+  const ch = new Character({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin });
   ch.ownerId = info.ownerId;
   addCharacter(ch);
   if (animated) {

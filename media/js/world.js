@@ -1,6 +1,6 @@
 // Décor : plate-forme d'usine futuriste flottante, postes de travail et machines.
 import * as THREE from '../vendor/three.module.min.js';
-import { CanvasScreen, cylinder, metal, mesh, neon, roundRect, roundedBox, scanlines, sphere } from './geometry.js';
+import { CanvasScreen, cylinder, mat, metal, mesh, neon, roundRect, roundedBox, scanlines, sphere } from './geometry.js';
 import { drawDoodles } from './doodles.js';
 
 const R = 8.4; // rayon de la plate-forme octogonale
@@ -16,7 +16,7 @@ const LAYOUT = {
   agent: [4.1, 4.2],
   bash: [5.8, 0.5],
   write: [4.4, -3.9],
-  trash: [2.55, 6.2],
+  trash: [-2.4, -4.95],
 };
 
 export const STATION_COLORS = {
@@ -401,24 +401,19 @@ function octagon(geo) {
 
 // ------------------------------------------------------------------ décor
 
-function floorTexture() {
-  const size = 2048;
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const g = c.getContext('2d');
-  const k = size / (2 * R);
-  const px = (x, z) => [(x + R) * k, (z + R) * k];
-
-  g.fillStyle = '#171c27';
+function paintPanels(g, size, k, px, f) {
+  g.fillStyle = f.bg ?? '#171c27';
   g.fillRect(0, 0, size, size);
   // Panneaux métalliques
+  const [pr, pg, pb] = f.panel ?? [24, 28, 37];
+  const jitter = f.jitter ?? 2;
   for (let x = -R; x < R; x += 1.2) {
     for (let z = -R; z < R; z += 1.2) {
       const [a, b] = px(x, z);
-      const shade = 24 + Math.floor(Math.random() * 2);
-      g.fillStyle = `rgb(${shade},${shade + 4},${shade + 13})`;
+      const shade = Math.floor(Math.random() * jitter);
+      g.fillStyle = `rgb(${pr + shade},${pg + shade},${pb + shade})`;
       g.fillRect(a + 2, b + 2, 1.2 * k - 4, 1.2 * k - 4);
-      g.fillStyle = '#2c3343';
+      g.fillStyle = f.bolt ?? '#2c3343';
       for (const [dx, dy] of [[10, 10], [1.2 * k - 10, 10], [10, 1.2 * k - 10], [1.2 * k - 10, 1.2 * k - 10]]) {
         g.beginPath();
         g.arc(a + dx, b + dy, 3, 0, Math.PI * 2);
@@ -426,9 +421,58 @@ function floorTexture() {
       }
     }
   }
+}
+
+/** Taches douces (neige, mousse) : `colors` en "r,g,b". */
+function paintBlotches(g, size, colors, count, alpha, rMin, rMax) {
+  for (let i = 0; i < count; i++) {
+    const x = Math.random() * size, y = Math.random() * size, r = rMin + Math.random() * (rMax - rMin);
+    const c = colors[i % colors.length];
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, `rgba(${c},${alpha})`);
+    grad.addColorStop(1, `rgba(${c},0)`);
+    g.fillStyle = grad;
+    g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+}
+
+function paintSnow(g, size) {
+  g.fillStyle = '#d6e6f1';
+  g.fillRect(0, 0, size, size);
+  paintBlotches(g, size, ['245,250,255', '180,210,232', '205,228,244'], 260, 0.5, 40, 160);
+  g.fillStyle = 'rgba(255,255,255,0.9)';
+  for (let i = 0; i < 2200; i++) g.fillRect(Math.random() * size, Math.random() * size, 2, 2);
+}
+
+function paintGoo(g, size) {
+  g.fillStyle = '#1c3624';
+  g.fillRect(0, 0, size, size);
+  paintBlotches(g, size, ['60,120,55', '40,90,45', '90,160,70'], 240, 0.45, 40, 170);
+  g.lineWidth = 3;
+  for (let i = 0; i < 220; i++) {
+    g.strokeStyle = `rgba(181,255,77,${0.08 + Math.random() * 0.18})`;
+    g.beginPath();
+    g.arc(Math.random() * size, Math.random() * size, 4 + Math.random() * 16, 0, Math.PI * 2);
+    g.stroke();
+  }
+}
+
+function floorTexture(theme) {
+  const fl = theme.floor ?? {};
+  const mark = fl.mark ?? 'rgba(143,160,187,0.16)';
+  const size = 2048;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const k = size / (2 * R);
+  const px = (x, z) => [(x + R) * k, (z + R) * k];
+
+  if (fl.style === 'snow') paintSnow(g, size);
+  else if (fl.style === 'goo') paintGoo(g, size);
+  else paintPanels(g, size, k, px, fl);
   // Marquages jaunes en pointillés autour de chaque poste
   g.setLineDash([26, 18]);
-  g.strokeStyle = 'rgba(143,160,187,0.16)';
+  g.strokeStyle = mark;
   g.lineWidth = 5;
   for (const [x, z] of Object.values(LAYOUT)) {
     const [a, b] = px(x, z);
@@ -443,7 +487,7 @@ function floorTexture() {
   // Zone hachurée autour de la borne centrale
   g.save();
   g.translate(...px(0, 0));
-  g.strokeStyle = 'rgba(143,160,187,0.14)';
+  g.strokeStyle = mark;
   g.lineWidth = 0.08 * k;
   g.setLineDash([0.22 * k, 0.22 * k]);
   g.beginPath();
@@ -457,35 +501,41 @@ function floorTexture() {
   return tex;
 }
 
-function buildPlatform(scene) {
+function buildPlatform(scene, theme) {
+  const p = theme.platform ?? {};
+  const fl = theme.floor ?? {};
   const top = new THREE.CircleGeometry(R, 8);
   top.rotateX(-Math.PI / 2);
   octagon(top);
   const pos = top.attributes.position;
   const uv = top.attributes.uv;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + R) / (2 * R), 1 - (pos.getZ(i) + R) / (2 * R));
-  const floor = new THREE.Mesh(top, new THREE.MeshStandardMaterial({ map: floorTexture(), metalness: 0.45, roughness: 0.55 }));
+  const floor = new THREE.Mesh(top, new THREE.MeshStandardMaterial({ map: floorTexture(theme), metalness: fl.metalness ?? 0.45, roughness: fl.roughness ?? 0.55 }));
   floor.receiveShadow = true;
   scene.add(floor);
 
   const side = octagon(new THREE.CylinderGeometry(R, R * 0.97, 0.55, 8, 1, true));
-  scene.add(mesh(side, metal('#202634'), 0, -0.275, 0));
+  scene.add(mesh(side, metal(p.side ?? '#202634'), 0, -0.275, 0));
   const band = octagon(new THREE.CylinderGeometry(R * 1.002, R * 1.002, 0.12, 8, 1, true));
-  scene.add(mesh(band, metal('#151a24'), 0, -0.1, 0));
-  scene.add(octRim(R + 0.01, 0.01, MARK, 0.03, 1.0));
+  scene.add(mesh(band, metal(p.band ?? '#151a24'), 0, -0.1, 0));
+  scene.add(octRim(R + 0.01, 0.01, p.rim ?? MARK, 0.03, p.rimIntensity ?? 1.0));
+  // Sur la banquise, le dessous est sous l'eau : pas de gradins ni de propulseurs.
+  if (p.underside === false) return [];
 
   // Dessous en gradins avec propulseurs
   const tiers = [[R * 0.97, R * 0.7, 1.1, -1.1], [R * 0.7, R * 0.38, 1.3, -2.3], [R * 0.38, R * 0.12, 1.0, -3.45]];
   tiers.forEach(([rt, rb, h, y], i) => {
-    scene.add(mesh(octagon(new THREE.CylinderGeometry(rt, rb, h, 8)), metal(i % 2 ? '#1a1f2b' : '#232a39'), 0, y, 0));
-    scene.add(octRim(rb + 0.02, y - h / 2, i === 2 ? '#ff7a1a' : '#4cc9f0', 0.05, 1.8));
+    const tierColors = p.tiers ?? ['#232a39', '#1a1f2b'];
+    const rims = p.tierRims ?? ['#4cc9f0', '#ff7a1a'];
+    scene.add(mesh(octagon(new THREE.CylinderGeometry(rt, rb, h, 8)), metal(tierColors[i % 2]), 0, y, 0));
+    scene.add(octRim(rb + 0.02, y - h / 2, i === 2 ? rims[1] : rims[0], 0.05, 1.8));
   });
   const thrusters = [];
   for (let k = 0; k < 4; k++) {
     const a = Math.PI / 4 + (k * Math.PI) / 2;
     const x = Math.sin(a) * R * 0.55, z = Math.cos(a) * R * 0.55;
     scene.add(mesh(cylinder(0.45, 0.6, 0.5, 20), metal('#2a3140'), x, -1.9, z));
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.6, 20, 1, true), neon('#4cc9f0', 2.2, { transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.6, 20, 1, true), neon(p.thrusterColor ?? '#4cc9f0', 2.2, { transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
     flame.rotation.x = Math.PI;
     flame.position.set(x, -2.95, z);
     scene.add(flame);
@@ -527,7 +577,9 @@ function buildRacks(scene) {
 // Le tapis est décalé vers la gauche pour laisser la corbeille au bout de la ligne.
 const CONVEYOR_X = -0.7;
 
-function buildConveyor(scene) {
+function buildConveyor(scene, theme) {
+  if (theme.conveyor === 'river') return buildRiver(scene);
+  if (theme.conveyor === 'asteroids') return buildAsteroidTrain(scene);
   const g = new THREE.Group();
   g.position.set(CONVEYOR_X, 0, 6.3);
   g.add(mesh(roundedBox(5.6, 0.12, 0.8, 0.03), metal('#2a3140'), 0, 0.42, 0));
@@ -546,17 +598,186 @@ function buildConveyor(scene) {
     crates.push(c);
   }
   scene.add(g);
-  return crates;
+  return (t, dt) => {
+    for (const c of crates) {
+      c.userData.x += dt * 0.45;
+      if (c.userData.x > 2.75) c.userData.x -= 5.5;
+      const x = c.userData.x;
+      const edge = Math.min(1, (2.75 - Math.abs(x)) / 0.3);
+      c.position.set(x, 0.68, 0);
+      c.scale.setScalar(Math.max(0.01, edge));
+    }
+  };
 }
 
-function buildSky(scene) {
+/** Rivière qui coule entre deux berges de neige, avec des poissons qui nagent et sautent. */
+function buildRiver(scene) {
+  const g = new THREE.Group();
+  g.position.set(CONVEYOR_X, 0, 6.3);
+  const L = 5.6, W = 0.8;
+
+  // Eau qui s'écoule : texture de reflets qui défile
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#2b7fbf';
+  ctx.fillRect(0, 0, 256, 64);
+  for (let i = 0; i < 60; i++) {
+    ctx.fillStyle = 'rgba(170,225,255,' + (0.15 + Math.random() * 0.3) + ')';
+    ctx.fillRect(Math.random() * 256, Math.random() * 64, 12 + Math.random() * 40, 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(4, 1);
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(L, W), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.12, metalness: 0.1, transparent: true, opacity: 0.94 }));
+  water.rotation.x = -Math.PI / 2;
+  water.position.y = 0.02;
+  water.receiveShadow = true;
+  g.add(water);
+
+  // Berges de neige et trous dans la glace aux deux bouts
+  const snow = mat('#f4f9fd', { roughness: 0.9 });
+  for (const z of [-1, 1]) g.add(mesh(roundedBox(L + 0.5, 0.14, 0.24, 0.07), snow, 0, 0.06, z * (W / 2 + 0.09)));
+  for (const x of [-1, 1]) {
+    const hole = new THREE.Mesh(new THREE.CircleGeometry(0.45, 28), new THREE.MeshBasicMaterial({ color: '#174a70' }));
+    hole.rotation.x = -Math.PI / 2;
+    hole.position.set(x * (L / 2 + 0.15), 0.022, 0);
+    g.add(hole);
+    const lip = mesh(new THREE.TorusGeometry(0.45, 0.07, 10, 32), snow, x * (L / 2 + 0.15), 0.03, 0);
+    lip.rotation.x = Math.PI / 2;
+    g.add(lip);
+  }
+
+  // Poissons colorés
+  const colors = ['#ff8a3d', '#ffd54f', '#9fd8ff', '#ff6f91', '#7be0b0'];
+  const fishEye = new THREE.MeshStandardMaterial({ color: '#10151f', roughness: 0.3 });
+  fishEye.userData.keepColor = true;
+  const fish = colors.map((col, i) => {
+    const f = new THREE.Group();
+    const body = mesh(sphere(0.09, 18, 12), mat(col, { roughness: 0.35 }));
+    body.scale.set(1.7, 0.75, 0.55);
+    f.add(body);
+    const tail = mesh(new THREE.ConeGeometry(0.07, 0.12, 4), mat(col, { roughness: 0.4 }), -0.18, 0, 0);
+    tail.rotation.z = Math.PI / 2;
+    f.add(tail);
+    for (const z of [-1, 1]) f.add(mesh(sphere(0.018, 8, 6), fishEye, 0.1, 0.025, z * 0.045));
+    f.userData = { x: -L / 2 + (i / colors.length) * L, z: (Math.random() - 0.5) * 0.4, speed: 0.35 + Math.random() * 0.45, phase: Math.random() * 6, jump: -1 };
+    g.add(f);
+    return f;
+  });
+
+  // Ronds dans l'eau quand un poisson replonge
+  const ripples = [];
+  const ripple = (x, z) => {
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.012, 6, 28), new THREE.MeshBasicMaterial({ color: '#d8f2ff', transparent: true, opacity: 0.8 }));
+    r.rotation.x = Math.PI / 2;
+    r.position.set(x, 0.03, z);
+    g.add(r);
+    ripples.push({ r, t: 0 });
+  };
+  scene.add(g);
+
+  return (t, dt) => {
+    tex.offset.x -= dt * 0.22;
+    for (const f of fish) {
+      const u = f.userData;
+      u.x += u.speed * dt;
+      if (u.x > L / 2) u.x -= L;
+      // Apparaît et disparaît par les trous dans la glace
+      const edge = Math.min(1, (L / 2 - Math.abs(u.x)) / 0.35);
+      f.scale.setScalar(Math.max(0.01, edge));
+      let y = -0.01, pitch = 0;
+      if (u.jump < 0 && edge >= 1 && Math.random() < dt * 0.12) u.jump = 0;
+      if (u.jump >= 0) {
+        u.jump += dt / 0.7;
+        y = Math.sin(u.jump * Math.PI) * 0.45;
+        pitch = (0.5 - u.jump) * 1.6;
+        if (u.jump >= 1) {
+          u.jump = -1;
+          ripple(u.x, u.z);
+        }
+      }
+      f.position.set(u.x, y, u.z + Math.sin(t * 2 + u.phase) * 0.08);
+      f.rotation.set(0, Math.sin(t * 6 + u.phase) * 0.25, pitch);
+    }
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      const rp = ripples[i];
+      rp.t += dt;
+      rp.r.scale.setScalar(1 + rp.t * 3);
+      rp.r.material.opacity = Math.max(0, 0.8 - rp.t);
+      if (rp.t > 0.8) {
+        g.remove(rp.r);
+        ripples.splice(i, 1);
+      }
+    }
+  };
+}
+
+/** Train d'astéroïdes : des rochers qui flottent en tournoyant entre deux faisceaux de guidage. */
+function buildAsteroidTrain(scene) {
+  const g = new THREE.Group();
+  g.position.set(CONVEYOR_X, 0, 6.3);
+  const L = 5.6;
+  for (const x of [-2.6, -0.9, 0.9, 2.6]) {
+    g.add(mesh(cylinder(0.08, 0.13, 0.34, 14), metal('#3a4150'), x, 0.17, 0));
+    const ring = mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 24), neon('#4cc9f0', 1.4), x, 0.35, 0);
+    ring.rotation.x = Math.PI / 2;
+    g.add(ring);
+  }
+  for (const z of [-0.3, 0.3]) g.add(mesh(new THREE.BoxGeometry(L, 0.018, 0.018), neon('#4cc9f0', 1.2), 0, 0.36, z));
+  // Champ de traction très léger entre les faisceaux
+  const field = new THREE.Mesh(new THREE.PlaneGeometry(L, 0.6), neon('#4cc9f0', 0.6, { transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }));
+  field.rotation.x = -Math.PI / 2;
+  field.position.y = 0.36;
+  g.add(field);
+
+  // Couleur de roche conservée : la teinte du thème ne doit pas la blanchir
+  const rock = new THREE.MeshStandardMaterial({ color: '#7b7f8a', roughness: 0.95, flatShading: true });
+  rock.userData.keepColor = true;
+  const ores = ['#b388ff', '#4cc9f0', '#3ddc97'];
+  const rocks = [];
+  for (let i = 0; i < 6; i++) {
+    const a = new THREE.Group();
+    const geo = new THREE.IcosahedronGeometry(0.17 + Math.random() * 0.06, 1);
+    const p = geo.attributes.position;
+    for (let k = 0; k < p.count; k++) {
+      const s = 0.8 + Math.random() * 0.35;
+      p.setXYZ(k, p.getX(k) * s, p.getY(k) * s, p.getZ(k) * s);
+    }
+    geo.computeVertexNormals();
+    a.add(mesh(geo, rock));
+    // Un astéroïde sur deux porte un minerai lumineux
+    if (i % 2 === 0) a.add(new THREE.Mesh(new THREE.OctahedronGeometry(0.06, 0), neon(ores[i % ores.length], 1.6)).translateY(0.15).translateX(0.05));
+    a.userData = { x: -L / 2 + (i / 6) * L, spin: 0.6 + Math.random(), phase: Math.random() * 6 };
+    g.add(a);
+    rocks.push(a);
+  }
+  scene.add(g);
+
+  return (t, dt) => {
+    for (const a of rocks) {
+      const u = a.userData;
+      u.x += dt * 0.45;
+      if (u.x > L / 2) u.x -= L;
+      const edge = Math.min(1, (L / 2 - Math.abs(u.x)) / 0.35);
+      a.position.set(u.x, 0.62 + Math.sin(t * 1.6 + u.phase) * 0.05, 0);
+      a.rotation.set(t * u.spin, t * u.spin * 0.7, 0);
+      a.scale.setScalar(Math.max(0.01, edge));
+    }
+  };
+}
+
+function buildSky(scene, theme) {
+  const sky = theme.sky ?? {};
   const m = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      top: { value: new THREE.Color('#03040b') },
-      mid: { value: new THREE.Color('#1a1446') },
-      bottom: { value: new THREE.Color('#05060f') },
+      top: { value: new THREE.Color(sky.top ?? '#03040b') },
+      mid: { value: new THREE.Color(sky.mid ?? '#1a1446') },
+      bottom: { value: new THREE.Color(sky.bottom ?? '#05060f') },
     },
     vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
     fragmentShader:
@@ -566,7 +787,8 @@ function buildSky(scene) {
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(95, 32, 16), m));
 
-  const n = 1400;
+  const n = theme.stars ?? 1400;
+  if (!n) return new THREE.Group();
   const pos = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const v = new THREE.Vector3().randomDirection().multiplyScalar(80 + Math.random() * 10);
@@ -661,8 +883,8 @@ function buildAssembly(st) {
 }
 
 function buildTrash(st) {
-  // Le robot se place à côté de la corbeille, côté centre, sans gêner la baie d'assemblage.
-  st.dir.set(-0.55, 0, -0.85).normalize();
+  // Le robot se place devant la corbeille, côté DOCS, sans gêner le tableau de planification.
+  st.dir.set(-0.25, 0, 0.97).normalize();
   st.side.set(-st.dir.z, 0, st.dir.x);
   st.group.rotation.y = Math.atan2(st.dir.x, st.dir.z);
   const g = st.group;
@@ -732,14 +954,86 @@ function buildTrash(st) {
   zoneMarker(st);
 }
 
-function buildDock(st, scene) {
+
+/** Tour de glace : blocs hexagonaux translucides, stalactites, pointe de cristal. */
+function buildIceTower(g) {
+  const ice = new THREE.MeshPhysicalMaterial({ color: '#cdeeff', roughness: 0.08, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true, opacity: 0.85 });
+  const frost = mat('#f4f9fd', { roughness: 0.9 });
+  // Lueur bleutée à l'intérieur de la glace
+  g.add(new THREE.Mesh(cylinder(0.1, 0.16, 1.5, 12), neon('#9fe6ff', 0.7)).translateY(0.95));
+  const tiers = [[0.5, 0.58, 0.5, 0.39], [0.4, 0.48, 0.48, 0.88], [0.3, 0.38, 0.45, 1.35]];
+  for (const [rt, rb, h, y] of tiers) {
+    g.add(mesh(new THREE.CylinderGeometry(rt, rb, h, 6), ice, 0, y, 0));
+    const band = mesh(new THREE.TorusGeometry(rt * 1.02, 0.025, 6, 6), frost, 0, y + h / 2, 0);
+    band.rotation.x = Math.PI / 2;
+    g.add(band);
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2 + 0.3;
+      const icicle = mesh(new THREE.ConeGeometry(0.035, 0.18, 6), ice, Math.cos(a) * rt * 0.98, y + h / 2 - 0.1, Math.sin(a) * rt * 0.98);
+      icicle.rotation.x = Math.PI;
+      g.add(icicle);
+    }
+  }
+  g.add(mesh(new THREE.ConeGeometry(0.3, 0.75, 6), ice, 0, 1.95, 0));
+  const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), neon('#e6f8ff', 1.1));
+  tip.position.y = 2.42;
+  tip.scale.set(1, 1.6, 1);
+  g.add(tip);
+  return (t) => (tip.rotation.y = t * 0.6);
+}
+
+/** Antenne satellite : mât haubané, parabole qui balaie le ciel, récepteur qui clignote. */
+function buildSatelliteTower(g) {
+  const steel = mat('#c9ced8', { metalness: 0.6, roughness: 0.3 });
+  g.add(mesh(cylinder(0.08, 0.13, 1.6, 16), steel, 0, 0.88, 0));
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    const strut = mesh(cylinder(0.02, 0.02, 0.95, 8), steel, Math.cos(a) * 0.28, 0.5, Math.sin(a) * 0.28);
+    strut.lookAt(0, 1.2, 0);
+    strut.rotateX(Math.PI / 2);
+    g.add(strut);
+  }
+  const head = new THREE.Group();
+  head.position.y = 1.72;
+  g.add(head);
+  head.add(mesh(roundedBox(0.22, 0.16, 0.22, 0.04), steel));
+  const dish = new THREE.Group();
+  dish.rotation.x = -0.7;
+  head.add(dish);
+  const bowl = mesh(new THREE.SphereGeometry(0.62, 36, 14, 0, Math.PI * 2, 0, Math.PI / 3.2), mat('#eef1f6', { side: THREE.DoubleSide, roughness: 0.4 }), 0, 0.62, 0);
+  bowl.rotation.x = Math.PI;
+  dish.add(bowl);
+  for (let k = 0; k < 3; k++) {
+    const a = (k / 3) * Math.PI * 2;
+    const rod = mesh(cylinder(0.012, 0.012, 0.5, 6), steel, Math.cos(a) * 0.2, 0.3, Math.sin(a) * 0.2);
+    rod.lookAt(0, 0.55, 0);
+    rod.rotateX(Math.PI / 2);
+    dish.add(rod);
+  }
+  const receiver = new THREE.Mesh(sphere(0.045, 14, 10), neon('#4cc9f0', 2));
+  receiver.position.y = 0.55;
+  dish.add(receiver);
+  return (t) => {
+    head.rotation.y = Math.sin(t * 0.25) * 1.2;
+    receiver.material.color.set('#4cc9f0').multiplyScalar(Math.sin(t * 4) > 0 ? 2.4 : 0.6);
+  };
+}
+
+function buildDock(st, scene, theme) {
   const g = st.group;
   g.add(mesh(octagon(new THREE.CylinderGeometry(1.25, 1.35, 0.14, 8)), metal('#232a39'), 0, 0.07, 0));
   g.add(octRim(1.26, 0.145, MARK, 0.025, 0.8));
-  g.add(mesh(cylinder(0.24, 0.32, 1.6, 20), metal('#2a3140'), 0, 0.9, 0));
-  g.add(mesh(cylinder(0.3, 0.26, 0.08, 20), metal('#323a4a'), 0, 1.74, 0));
+  const style = theme.dock;
+  if (style === 'ice') st.animateTower = buildIceTower(g);
+  else if (style === 'satellite') st.animateTower = buildSatelliteTower(g);
+  else {
+    g.add(mesh(cylinder(0.24, 0.32, 1.6, 20), metal('#2a3140'), 0, 0.9, 0));
+    g.add(mesh(cylinder(0.3, 0.26, 0.08, 20), metal('#323a4a'), 0, 1.74, 0));
+  }
+  const ringColor = style === 'ice' ? '#d8f4ff' : style === 'satellite' ? '#4cc9f0' : st.color;
   const rings = [0, 1, 2].map((i) => {
-    const r = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.018, 8, 40), neon(st.color, 1.3));
+    // Anneaux qui montent le long de la tour : givre, signal ou énergie selon le thème
+    const r = new THREE.Mesh(new THREE.TorusGeometry(style === 'ice' ? 0.62 : 0.34, 0.018, 8, 40), neon(ringColor, style === 'ice' ? 0.9 : 1.3));
     r.rotation.x = Math.PI / 2;
     r.userData.phase = i / 3;
     g.add(r);
@@ -759,7 +1053,7 @@ function buildDock(st, scene) {
     pad.add(outline);
     g.add(pad);
   });
-  const light = new THREE.PointLight(st.color, 3, 6, 1.6);
+  const light = new THREE.PointLight(ringColor, 3, 6, 1.6);
   light.position.set(0, 2.6, 0);
   g.add(light);
   Object.assign(st, { rings, light });
@@ -768,12 +1062,37 @@ function buildDock(st, scene) {
 
 // ----------------------------------------------------------------- monde
 
-export function buildWorld(scene) {
-  const stars = buildSky(scene);
-  scene.fog = new THREE.Fog('#0b0d22', 40, 100);
+/** Teinte la structure sombre (métal) pour l'accorder au thème ; écrans, néons et sols texturés ne changent pas. */
+function applyTint(scene, tint) {
+  if (!tint) return;
+  const target = new THREE.Color(tint.color);
+  const done = new Map();
+  const hsl = {};
+  scene.traverse((o) => {
+    if (!o.isMesh || Array.isArray(o.material)) return;
+    const m = o.material;
+    if (!m.isMeshStandardMaterial || m.map || m.userData.keepColor) return;
+    if (!done.has(m)) {
+      m.color.getHSL(hsl);
+      let next = m;
+      if (hsl.l < 0.35) {
+        next = m.clone();
+        next.color.lerp(target, tint.amount);
+      }
+      done.set(m, next);
+    }
+    o.material = done.get(m);
+  });
+}
 
-  scene.add(new THREE.HemisphereLight('#8fa6ff', '#1a1420', 0.7));
-  const sun = new THREE.DirectionalLight('#dfe8ff', 1.8);
+export function buildWorld(scene, theme = {}) {
+  const stars = buildSky(scene, theme);
+  const fog = theme.fog ?? { color: '#0b0d22', near: 40, far: 100 };
+  scene.fog = new THREE.Fog(fog.color, fog.near, fog.far);
+
+  const hemi = theme.hemi ?? { sky: '#8fa6ff', ground: '#1a1420', intensity: 0.7 };
+  scene.add(new THREE.HemisphereLight(hemi.sky, hemi.ground, hemi.intensity));
+  const sun = new THREE.DirectionalLight(theme.sun?.color ?? '#dfe8ff', theme.sun?.intensity ?? 1.8);
   sun.position.set(7, 16, 9);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -782,9 +1101,9 @@ export function buildWorld(scene) {
   sun.shadow.normalBias = 0.03;
   scene.add(sun);
 
-  const thrusters = buildPlatform(scene);
+  const thrusters = buildPlatform(scene, theme);
   const racks = buildRacks(scene);
-  const crates = buildConveyor(scene);
+  const conveyor = buildConveyor(scene, theme);
 
   const stations = {};
   for (const [key, [x, z]] of Object.entries(LAYOUT)) stations[key] = new Station(key, x, z);
@@ -802,7 +1121,7 @@ export function buildWorld(scene) {
   workstation(write, (ctx, w, h) => drawCode(ctx, w, h, write.code), { sw: 1.2, sh: 0.7 });
 
   const bash = stations.bash;
-  bash.lines = [{ t: 'robot@usine:~$', c: '#39ff9f' }];
+  bash.lines = [{ t: theme.shell ?? 'robot@usine:~$', c: '#39ff9f' }];
   workstation(bash, (ctx, w, h) => drawTerminal(ctx, w, h, bash.lines));
 
   const web = stations.web;
@@ -820,24 +1139,20 @@ export function buildWorld(scene) {
   buildTrash(stations.trash);
   for (const st of Object.values(stations)) scene.add(st.group);
   stations.dock = new Dock();
-  buildDock(stations.dock, scene);
+  buildDock(stations.dock, scene, theme);
+  applyTint(scene, theme.tint);
+  const decor = theme.decor?.(scene);
 
   const timers = { slow: 0, fast: 0, racks: 0 };
 
   function update(t, dt) {
     stars.rotation.y = t * 0.004;
+    decor?.(t, dt);
     thrusters.forEach((f, i) => {
       f.scale.y = 1 + Math.sin(t * 13 + i) * 0.08;
       f.material.opacity = 0.45 + Math.sin(t * 17 + i * 2) * 0.08;
     });
-    for (const c of crates) {
-      c.userData.x += dt * 0.45;
-      if (c.userData.x > 2.75) c.userData.x -= 5.5;
-      const x = c.userData.x;
-      const edge = Math.min(1, (2.75 - Math.abs(x)) / 0.3);
-      c.position.set(x, 0.68, 0);
-      c.scale.setScalar(Math.max(0.01, edge));
-    }
+    conveyor(t, dt);
 
     const dock = stations.dock;
     dock.rings.forEach((r) => {
@@ -847,6 +1162,7 @@ export function buildWorld(scene) {
       r.scale.setScalar(1 + Math.sin(k * Math.PI) * 0.15);
     });
     dock.light.intensity = 2.8 + Math.sin(t * 3) * 0.5;
+    dock.animateTower?.(t);
 
     const bin = stations.trash;
     bin.lidTimer = Math.max(0, bin.lidTimer - dt);

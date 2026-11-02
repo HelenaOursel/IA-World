@@ -102,7 +102,8 @@ export class Hud {
     const brand = el('div', 'brand', top);
     el('span', 'logo', brand, '▣');
     el('span', '', brand, 'IA World');
-    el('span', 'brand-sub', brand, 'USINE');
+    const current = (handlers.themes ?? []).find((t) => t.id === handlers.theme);
+    el('span', 'brand-sub', brand, (current?.name.split(' ·')[0] ?? 'Usine').toUpperCase());
     this.hudBtn = el('button', 'hud-toggle', brand);
     this.hudBtn.addEventListener('click', () => this.setHudHidden(!this.hudHidden));
     this.setHudHidden(false);
@@ -110,6 +111,16 @@ export class Hud {
     const row = el('div', 'status-row', top);
     this.status = el('span', 'pill off', row, '○ Hors ligne');
     this.demoBadge = el('span', 'pill demo hidden', row, 'DÉMO');
+    // Choix du thème de l'univers
+    const pick = el('label', 'theme-pick', top);
+    el('span', '', pick, 'Thème');
+    const select = el('select', 'theme-select', pick);
+    for (const t of handlers.themes ?? []) {
+      const o = el('option', '', select, t.name);
+      o.value = t.id;
+    }
+    select.value = handlers.theme ?? 'usine';
+    select.addEventListener('change', () => handlers.setTheme(select.value));
     this.title.title = 'Cliquer pour choisir la session';
     this.title.addEventListener('click', () => handlers.pickSession());
 
@@ -132,12 +143,32 @@ export class Hud {
     chip.innerHTML = CHIP_SVG + '<span>Puce</span>';
     chip.title = 'Glisse la puce sur un robot pour lui faire plaisir';
     chip.addEventListener('pointerdown', (e) => this.dragChip(e));
-    this.demoBtn = el('button', '', controls, '▶ Démo');
-    this.demoBtn.addEventListener('click', () => handlers.toggleDemo());
-    this.rotateBtn = el('button', '', controls, '⟳ Rotation');
-    this.rotateBtn.addEventListener('click', () => handlers.toggleRotate());
-    const reset = el('button', '', controls, '⌖ Recentrer');
-    reset.addEventListener('click', () => handlers.resetCamera());
+    // Les autres actions sont rangées dans un menu qui s'ouvre vers le haut.
+    const menu = el('div', 'action-menu', controls);
+    this.menuBtn = el('button', 'menu-toggle', menu, '☰ Actions');
+    this.menuBtn.setAttribute('aria-haspopup', 'menu');
+    this.menuBtn.addEventListener('click', () => this.toggleMenu());
+    this.menuList = el('div', 'menu-list hidden', menu);
+    this.menuList.setAttribute('role', 'menu');
+    const item = (label, action) => {
+      const b = el('button', '', this.menuList, label);
+      b.setAttribute('role', 'menuitem');
+      b.addEventListener('click', () => {
+        action();
+        this.toggleMenu(false);
+      });
+      return b;
+    };
+    this.demoBtn = item('▶ Démo', () => handlers.toggleDemo());
+    this.rotateBtn = item('⟳ Rotation', () => handlers.toggleRotate());
+    item('⌖ Recentrer', () => handlers.resetCamera());
+    this.toggleMenu(false);
+    document.addEventListener('pointerdown', (e) => {
+      if (!menu.contains(e.target)) this.toggleMenu(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') this.toggleMenu(false);
+    });
 
     this.empty = el('div', 'empty', root);
     el('div', 'empty-title', this.empty, 'Usine en veille');
@@ -187,6 +218,21 @@ export class Hud {
     move(e);
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
+  }
+
+  /** Message temporaire en haut au centre. */
+  notice(text, seconds = 4) {
+    this.noticeEl ??= el('div', 'notice hidden', this.root);
+    this.noticeEl.textContent = text;
+    this.noticeEl.classList.remove('hidden');
+    clearTimeout(this.noticeTimer);
+    this.noticeTimer = setTimeout(() => this.noticeEl.classList.add('hidden'), seconds * 1000);
+  }
+
+  toggleMenu(open = this.menuList.classList.contains('hidden')) {
+    this.menuList.classList.toggle('hidden', !open);
+    this.menuBtn.classList.toggle('open', open);
+    this.menuBtn.setAttribute('aria-expanded', String(open));
   }
 
   setDemo(on) {

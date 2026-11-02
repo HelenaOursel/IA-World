@@ -1,51 +1,13 @@
-// Petits robots industriels cubiques (Claude et ses agents).
+// Personnages animés (Claude et ses agents) ; leur apparence dépend du thème (voir skins.js).
 import * as THREE from '../vendor/three.module.min.js';
-import { easeOutBack, lerpAngle, mat, mesh, neon, roundedBox, sphere } from './geometry.js';
+import { easeOutBack, lerpAngle } from './geometry.js';
+import { SKINS } from './skins.js';
 
 const POSE_KEYS = ['sLx', 'sLz', 'eL', 'sRx', 'sRz', 'eR', 'tiltX', 'tiltZ', 'yaw', 'bob', 'lift'];
 
-const HOVER_H = 0.16; // le cube lévite à cette hauteur
-
-const screenCache = new Map();
-/** Plaque d'écran aux coins arrondis (épaisseur 2 cm, bord biseauté). */
-function screenGeometry(w, h, r) {
-  const key = [w, h, r].join(':');
-  if (screenCache.has(key)) return screenCache.get(key);
-  const x = -w / 2, y = -h / 2;
-  const shape = new THREE.Shape();
-  shape.moveTo(x + r, y);
-  shape.lineTo(x + w - r, y);
-  shape.quadraticCurveTo(x + w, y, x + w, y + r);
-  shape.lineTo(x + w, y + h - r);
-  shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  shape.lineTo(x + r, y + h);
-  shape.quadraticCurveTo(x, y + h, x, y + h - r);
-  shape.lineTo(x, y + r);
-  shape.quadraticCurveTo(x, y, x + r, y);
-  const g = new THREE.ExtrudeGeometry(shape, { depth: 0.012, bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.008, bevelSegments: 3, curveSegments: 14 });
-  screenCache.set(key, g);
-  return g;
-}
-
 const WHITE = new THREE.Color('#ffffff');
 
-let glowTex;
-/** Halo circulaire projeté au sol sous le robot. */
-function glowTexture() {
-  if (glowTex) return glowTex;
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const g = c.getContext('2d');
-  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
-  grad.addColorStop(0.45, 'rgba(255,255,255,0.35)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 128, 128);
-  glowTex = new THREE.CanvasTexture(c);
-  return glowTex;
-}
-
+/** Dessine le visage. `s.glow` : yeux lumineux ; `s.mouthless` : pas de bouche (le pingouin a un bec). */
 function drawFace(g, w, h, s) {
   g.clearRect(0, 0, w, h);
   const col = s.expr === 'error' ? '#ff4d6d' : s.color;
@@ -64,7 +26,9 @@ function drawFace(g, w, h, s) {
   g.lineCap = 'round';
   g.lineJoin = 'round';
   g.shadowColor = col;
-  g.shadowBlur = 16;
+  const blur = s.glow ? 16 : 0;
+  g.shadowBlur = blur;
+  const M = !s.mouthless;
   const eyes = (height, yOff = 0) => {
     for (const x of [cx - dx, cx + dx]) {
       g.beginPath();
@@ -83,9 +47,10 @@ function drawFace(g, w, h, s) {
       g.fill();
     }
     g.fillStyle = col;
-    g.shadowBlur = 16;
+    g.shadowBlur = blur;
   };
   const mouth = (draw) => {
+    if (!M) return;
     g.lineWidth = 6;
     g.beginPath();
     draw();
@@ -121,19 +86,23 @@ function drawFace(g, w, h, s) {
         g.arc(x, cy - 4, 15, Math.PI * 0.22, Math.PI * 0.78);
         g.stroke();
       }
-      g.beginPath();
-      g.ellipse(w / 2, h * 0.7, 4 + s.mouth * 2, 3 + s.mouth * 4, 0, 0, Math.PI * 2);
-      g.fill();
+      if (M) {
+        g.beginPath();
+        g.ellipse(w / 2, h * 0.7, 4 + s.mouth * 2, 3 + s.mouth * 4, 0, 0, Math.PI * 2);
+        g.fill();
+      }
       break;
     case 'cheeky':
       // Concentré sur sa bêtise : petit sourire en coin et bout de langue.
       eyes(eh * 0.78);
       sparkle();
       mouth(() => g.arc(w / 2 - 2, h * 0.66, 10, Math.PI * 0.1, Math.PI * 0.75));
-      g.fillStyle = g.shadowColor = '#ff6f9f';
-      g.beginPath();
-      g.ellipse(w / 2 + 7, h * 0.76, 5.5, 7, -0.3, 0, Math.PI * 2);
-      g.fill();
+      if (M) {
+        g.fillStyle = g.shadowColor = '#ff6f9f';
+        g.beginPath();
+        g.ellipse(w / 2 + 7, h * 0.76, 5.5, 7, -0.3, 0, Math.PI * 2);
+        g.fill();
+      }
       break;
     case 'focus':
       eyes(eh * 0.62, 4);
@@ -147,9 +116,11 @@ function drawFace(g, w, h, s) {
       eyes(eh * 0.8, -4);
       sparkle(-4);
       g.lineWidth = 5;
-      g.beginPath();
-      g.arc(w / 2 + 6, h * 0.72, 6, Math.PI * 0.1, Math.PI * 0.9);
-      g.stroke();
+      if (M) {
+        g.beginPath();
+        g.arc(w / 2 + 6, h * 0.72, 6, Math.PI * 0.1, Math.PI * 0.9);
+        g.stroke();
+      }
       for (let i = 0; i < 3; i++) {
         g.globalAlpha = i < s.dots ? 1 : 0.25;
         g.beginPath();
@@ -164,9 +135,11 @@ function drawFace(g, w, h, s) {
       for (const x of [cx - dx, cx + dx]) heart(x, cy, 40 + s.mouth * 6);
       g.fillStyle = col;
       g.shadowColor = col;
-      g.beginPath();
-      g.arc(w / 2, h * 0.64, 12, 0, Math.PI);
-      g.fill();
+      if (M) {
+        g.beginPath();
+        g.arc(w / 2, h * 0.64, 12, 0, Math.PI);
+        g.fill();
+      }
       break;
     case 'happy':
       g.lineWidth = 8;
@@ -175,16 +148,20 @@ function drawFace(g, w, h, s) {
         g.arc(x, cy + 8, 14, Math.PI * 1.15, Math.PI * 1.85);
         g.stroke();
       }
-      g.beginPath();
-      g.arc(w / 2, h * 0.62, 13, 0, Math.PI);
-      g.fill();
+      if (M) {
+        g.beginPath();
+        g.arc(w / 2, h * 0.62, 13, 0, Math.PI);
+        g.fill();
+      }
       break;
     case 'surprise':
       eyes(eh * 1.1);
       sparkle();
-      g.beginPath();
-      g.ellipse(w / 2, h * 0.73, 6, 8, 0, 0, Math.PI * 2);
-      g.fill();
+      if (M) {
+        g.beginPath();
+        g.ellipse(w / 2, h * 0.73, 6, 8, 0, 0, Math.PI * 2);
+        g.fill();
+      }
       break;
     case 'error':
       g.lineWidth = 8;
@@ -203,9 +180,11 @@ function drawFace(g, w, h, s) {
     case 'talk':
       eyes(eh);
       sparkle();
-      g.beginPath();
-      g.ellipse(w / 2, h * 0.7, 9 + s.mouth * 3, 3 + s.mouth * 9, 0, 0, Math.PI * 2);
-      g.fill();
+      if (M) {
+        g.beginPath();
+        g.ellipse(w / 2, h * 0.7, 9 + s.mouth * 3, 3 + s.mouth * 9, 0, 0, Math.PI * 2);
+        g.fill();
+      }
       break;
     default:
       eyes(eh);
@@ -216,12 +195,13 @@ function drawFace(g, w, h, s) {
 }
 
 export class Character {
-  constructor({ id, name, agentType = '', color, isMain = false }) {
+  constructor({ id, name, agentType = '', color, isMain = false, skin = 'robot' }) {
     this.id = id;
     this.name = name;
     this.agentType = agentType;
     this.color = color;
     this.isMain = isMain;
+    this.skin = skin;
     this.size = isMain ? 0.7 : 0.6;
 
     this.root = new THREE.Group();
@@ -243,70 +223,11 @@ export class Character {
     this.build();
   }
 
+  /** Construit l'apparence du thème ; `look` décrit ses particularités (main, sommet, lévitation, yeux…). */
   build() {
-    const S = this.size;
-    const c = this.chassis;
-
-    // Halo au sol : le cube flotte au-dessus
-    this.glow = new THREE.Mesh(
-      new THREE.PlaneGeometry(S * 1.5, S * 1.5),
-      new THREE.MeshBasicMaterial({ map: glowTexture(), color: new THREE.Color(this.color).multiplyScalar(0.8), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
-    this.glow.rotation.x = -Math.PI / 2;
-    this.glow.position.y = 0.015;
-    c.add(this.glow);
-
-    // Corps : cube laqué de la couleur du robot, coins très arrondis (pivote comme une tourelle)
-    this.body = new THREE.Group();
-    this.bodyY = HOVER_H + S / 2;
-    this.body.position.y = this.bodyY;
-    c.add(this.body);
-    const b = this.body;
-    const R = S * 0.2;
-    const shell = new THREE.MeshPhysicalMaterial({ color: this.color, metalness: 0.2, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.3 });
-    b.add(mesh(roundedBox(S, S, S, R), shell));
-    // Écran noir arrondi sur la face avant, qui contient les yeux
-    b.add(mesh(screenGeometry(S * 0.8, S * 0.55, S * 0.15), new THREE.MeshPhysicalMaterial({ color: '#05070c', metalness: 0.2, roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.15 }), 0, S * 0.04, S / 2 - 0.012));
-
-    this.faceCanvas = document.createElement('canvas');
-    this.faceCanvas.width = 192;
-    this.faceCanvas.height = 120;
-    this.faceTex = new THREE.CanvasTexture(this.faceCanvas);
-    this.faceTex.colorSpace = THREE.SRGBColorSpace;
-    const faceMat = new THREE.MeshBasicMaterial({ map: this.faceTex, transparent: true, depthWrite: false });
-    faceMat.color.setScalar(1.7);
-    const face = new THREE.Mesh(new THREE.PlaneGeometry(S * 0.76, S * 0.475), faceMat);
-    face.position.set(0, S * 0.04, S / 2 + 0.018);
-    b.add(face);
-
-    // Petite antenne avec une boule lumineuse qui se balance
-    this.antenna = new THREE.Group();
-    this.antenna.position.y = S / 2;
-    this.antenna.add(mesh(roundedBox(0.022, 0.16, 0.022, 0.01, 2), mat('#2a2f3c', { metalness: 0.5, roughness: 0.3 }), 0, 0.08, 0));
-    this.antennaBall = new THREE.Mesh(sphere(0.045, 18, 12), neon(this.color, 2));
-    this.antennaBall.position.y = 0.18;
-    this.antenna.add(this.antennaBall);
-    b.add(this.antenna);
+    this.look = (SKINS[this.skin] ?? SKINS.robot)(this);
     this.wobble = { x: 0, z: 0, vx: 0, vz: 0 };
     this.signalFlash = 0;
-
-    // Petits bras courts aux mains rondes
-    const armMat = mat('#151924', { metalness: 0.4, roughness: 0.35 });
-    const handMat = shell;
-    const makeArm = (sx) => {
-      const shoulder = new THREE.Group();
-      shoulder.position.set(sx * (S / 2 + 0.02), -S * 0.08, 0.02);
-      shoulder.add(mesh(roundedBox(0.085, 0.17, 0.085, 0.042, 4), armMat, 0, -0.065, 0));
-      const elbow = new THREE.Group();
-      elbow.position.y = -0.14;
-      elbow.add(mesh(roundedBox(0.08, 0.15, 0.08, 0.04, 4), armMat, 0, -0.06, 0));
-      elbow.add(mesh(sphere(0.062, 18, 12), handMat, 0, -0.16, 0));
-      shoulder.add(elbow);
-      b.add(shoulder);
-      return { shoulder, elbow };
-    };
-    this.armL = makeArm(-1);
-    this.armR = makeArm(1);
   }
 
   /** L'antenne réagit comme un ressort aux mouvements ; sa boule clignote quand le robot réfléchit. */
@@ -329,7 +250,7 @@ export class Character {
 
   /** Main droite, en coordonnées monde (d'où partent les objets lancés). */
   handPosition(out) {
-    return this.armR.elbow.localToWorld(out.set(0, -0.16, 0));
+    return this.armR.elbow.localToWorld(out.set(0, this.look.hand ?? -0.16, 0));
   }
 
   /** Pointe de l'antenne, en coordonnées monde. */
@@ -345,7 +266,7 @@ export class Character {
 
   /** Point au-dessus du robot, en coordonnées monde (pour les bulles). */
   topPosition(out) {
-    return this.root.localToWorld(out.set(0, this.bodyY + this.size / 2 + 0.5, 0));
+    return this.root.localToWorld(out.set(0, this.bodyY + (this.look.top ?? this.size / 2 + 0.5), 0));
   }
 
   setPosition(v) {
@@ -430,10 +351,11 @@ export class Character {
     this.armR.shoulder.rotation.set(p.sRx, 0, p.sRz);
     this.armR.elbow.rotation.x = p.eR;
     this.body.rotation.set(p.tiltX, p.yaw, p.tiltZ);
-    const hover = Math.sin(t * 2.4 + this.phase) * 0.025;
+    const hover = Math.sin(t * 2.4 + this.phase) * (this.look.hover ?? 0.025);
     this.body.position.y = this.bodyY + p.bob + hover;
-    const squash = 1 + Math.cos(t * 2.4 + this.phase) * 0.018;
+    const squash = 1 + Math.cos(t * 2.4 + this.phase) * (this.look.squash ?? 0.018);
     this.body.scale.set(1 / Math.sqrt(squash), squash, 1 / Math.sqrt(squash));
+    this.look.animate?.(this, dt, t, moving);
     this.updateAntenna(dt, t, moving, action);
     this.chassis.position.y = p.lift;
     this.glow.material.opacity = 0.55 - hover * 4 - p.lift * 1.2;
@@ -578,7 +500,7 @@ export class Character {
   }
 
   computeFace(action, t, dt) {
-    const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0, color: this.color };
+    const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0, color: this.look.eye ?? this.color, glow: this.look.glow !== false, mouthless: !!this.look.mouthless };
     switch (action) {
       case 'type':
       case 'read':

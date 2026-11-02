@@ -387,6 +387,48 @@ body {
   z-index: 3;
 }
 
+/* Menu d'actions : s'ouvre vers le haut, aligné à droite. */
+.action-menu {
+  position: relative;
+}
+
+.menu-toggle.open {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+
+.menu-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 100%;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+  animation: menu-in 0.15s ease-out;
+}
+
+.menu-list button {
+  width: 100%;
+  text-align: left;
+  white-space: nowrap;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
 button {
   font-family: var(--mono);
   font-size: 11px;
@@ -687,4 +729,64 @@ button.primary:hover {
   border-color: var(--cyan);
   box-shadow: 0 0 16px rgba(125, 249, 255, 0.35);
   font-weight: 600;
+}
+
+/* Choix du thème */
+.theme-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 9px;
+}
+
+.theme-pick .theme-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-select {
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.theme-select:focus {
+  outline: 1px solid var(--cyan);
+}
+
+.theme-select option {
+  background: #0b1020;
+  color: var(--text);
+}
+
+/* Message temporaire (changement de thème…) */
+.notice {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  max-width: min(520px, 80vw);
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--cyan);
+  border-radius: 8px;
+  padding: 9px 14px;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
 }
