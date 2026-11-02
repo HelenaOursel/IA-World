@@ -10,7 +10,7 @@ const WHITE = new THREE.Color('#ffffff');
 function drawFace(g, w, h, s) {
   g.clearRect(0, 0, w, h);
   const col = s.expr === 'error' ? '#ff4d6d' : s.color;
-  const cx = w / 2 + s.eyeX * 16, cy = h * 0.4 + s.eyeY * 10, dx = 42, ew = 34, eh = 46;
+  const cx = w / 2 + s.eyeX * 16, cy = h * 0.4 + s.eyeY * 10, dx = 42, ew = 34 * s.eyeScale, eh = 46 * s.eyeScale;
 
   // Joues roses
   g.fillStyle = s.expr === 'happy' ? 'rgba(255,130,190,0.6)' : 'rgba(255,130,190,0.35)';
@@ -522,7 +522,7 @@ export class Character {
   }
 
   computeFace(action, t, dt) {
-    const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0, color: this.look.eye ?? this.color, glow: this.look.glow !== false, mouthless: !!this.look.mouthless };
+    const f = { expr: 'normal', eyeX: 0, eyeY: 0, mouth: 0, dots: 0, color: this.look.eye ?? this.color, glow: this.look.glow !== false, mouthless: !!this.look.mouthless, eyeScale: this.look.eyeScale ?? 1 };
     if (this.poses[action]?.face) this.poses[action].face(f, t, this);
     else switch (action) {
       case 'type':
