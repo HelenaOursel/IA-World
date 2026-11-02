@@ -675,6 +675,8 @@ function handleEvent(ev) {
       break;
     }
     case 'sessionStart':
+      // Après un /clear, la nouvelle session reprend le personnage de l'ancienne : seul son titre change.
+      if (chars.has(ev.session.mainId)) hud.setCharacterType(ev.session.mainId, shorten(ev.session.title, 26));
       ensureMain(ev.session.mainId, ev.session.title, true);
       sessions.set(ev.session.mainId, ev.session);
       hud.setSession(primaryTitle({ session: ev.session, sessions: [...sessions.values()] }), true);

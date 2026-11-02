@@ -1,6 +1,7 @@
 // Surveille les transcripts Claude Code (~/.claude/projects/<projet>/<session>.jsonl)
 // et les sous-agents (<session>/subagents/agent-<id>.jsonl) pour produire des WorldEvent.
 // Toutes les sessions actives récemment sont suivies en même temps : chacune a son robot Claude.
+// Un /clear ouvre un nouveau fichier de session : il remplace l'ancien et garde le même robot.
 import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -16,6 +17,8 @@ const ACTIVE_SESSION_MS = 15 * 60_000;
 const STALE_AGENT_MS = 10 * 60_000;
 const BOOTSTRAP_BYTES = 1024 * 1024;
 const MAX_READ_BYTES = 4 * 1024 * 1024;
+// Une session est remplacée par une plus récente du même projet si elle n'a plus rien écrit depuis son début (à cette marge près).
+const REPLACE_SLACK_MS = 5_000;
 
 export interface WatcherOptions {
   projectsDir: string;
@@ -102,6 +105,73 @@ function mtimeOf(file: string): number {
   }
 }
 
+/** Lit le début d'un fichier, ligne par ligne (la dernière ligne partielle est ignorée). */
+function readHeadLines(file: string, bytes: number): string[] {
+  try {
+    const buf = Buffer.alloc(bytes);
+    const fd = fs.openSync(file, 'r');
+    let n = 0;
+    try {
+      n = fs.readSync(fd, buf, 0, bytes, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const lines = buf.toString('utf8', 0, n).split('\n');
+    if (n === bytes) lines.pop();
+    return lines.filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+const startCache = new Map<string, number>();
+/** Début d'une session : horodatage de sa première entrée datée, sinon date de création du fichier. */
+function startOf(file: string): number {
+  const cached = startCache.get(file);
+  if (cached) return cached;
+  let start = 0;
+  for (const line of readHeadLines(file, 64 * 1024).slice(0, 40)) {
+    const ts = Date.parse(safeJson(line)?.timestamp ?? '');
+    if (ts) {
+      start = ts;
+      break;
+    }
+  }
+  if (!start) {
+    try {
+      start = fs.statSync(file).birthtimeMs;
+    } catch {
+      start = 0;
+    }
+  }
+  start ||= mtimeOf(file);
+  startCache.set(file, start);
+  return start;
+}
+
+/**
+ * Sessions remplacées (ancienne -> nouvelle) : après un /clear, l'ancien fichier se tait et un nouveau commence
+ * dans le même projet. Deux sessions vraiment parallèles continuent d'écrire toutes les deux et ne sont pas concernées.
+ */
+function replacements(files: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const a of files) {
+    const end = mtimeOf(a);
+    let next: string | undefined;
+    let nextStart = Infinity;
+    for (const b of files) {
+      if (b === a || path.dirname(b) !== path.dirname(a)) continue;
+      const s = startOf(b);
+      if (s > startOf(a) && end <= s + REPLACE_SLACK_MS && s < nextStart) {
+        next = b;
+        nextStart = s;
+      }
+    }
+    if (next) out.set(a, next);
+  }
+  return out;
+}
+
 function readDir(dir: string): fs.Dirent[] {
   try {
     return fs.readdirSync(dir, { withFileTypes: true });
@@ -156,12 +226,13 @@ class TrackedSession {
   lastActivities = new Map<string, WorldEvent>();
   lastActivityTime: number;
 
-  constructor(file: string, private readonly emit: (ev: WorldEvent) => void) {
+  /** `mainId` : celui de la session remplacée (après un /clear), pour garder le même personnage. */
+  constructor(file: string, private readonly emit: (ev: WorldEvent) => void, mainId?: string) {
     this.lastActivityTime = mtimeOf(file);
     const id = path.basename(file, '.jsonl');
     let title = '';
     let project = path.basename(path.dirname(file));
-    this.info = { id, mainId: 'main:' + id.slice(0, 8), file, title, project };
+    this.info = { id, mainId: mainId ?? 'main:' + id.slice(0, 8), file, title, project };
 
     for (const line of readTailLines(file, BOOTSTRAP_BYTES)) {
       const o = safeJson(line);
@@ -426,6 +497,7 @@ export class SessionWatcher extends EventEmitter {
   private discover(forceSnapshot: boolean): void {
     const initial = forceSnapshot || this.ticks === 0;
     let wanted: string[];
+    let replaced = new Map<string, string>();
     if (this.pinned) {
       wanted = [this.pinned];
     } else {
@@ -438,18 +510,28 @@ export class SessionWatcher extends EventEmitter {
       for (const [file, s] of this.sessions) {
         if (!wanted.includes(file) && now - s.activity() < ACTIVE_SESSION_MS) wanted.push(file);
       }
+      replaced = replacements(wanted);
+      wanted = wanted.filter((f) => !replaced.has(f));
     }
 
     let changed = false;
+    // Session qui succède à une session suivie (/clear) -> mainId à reprendre
+    const inherit = new Map<string, string>();
     for (const [file, s] of this.sessions) {
       if (wanted.includes(file)) continue;
       this.sessions.delete(file);
       changed = true;
-      if (!initial) this.emitEvent({ type: 'sessionEnd', mainId: s.info.mainId });
+      let next = replaced.get(file);
+      while (next && !wanted.includes(next)) next = replaced.get(next);
+      if (next && !this.sessions.has(next)) {
+        // Le personnage reste : seuls les sous-agents de l'ancienne session s'en vont.
+        inherit.set(next, s.info.mainId);
+        if (!initial) for (const a of s.activeAgents()) this.emitEvent({ type: 'despawn', id: a.id });
+      } else if (!initial) this.emitEvent({ type: 'sessionEnd', mainId: s.info.mainId });
     }
     for (const file of wanted) {
       if (this.sessions.has(file)) continue;
-      const s = new TrackedSession(file, (ev) => this.emitEvent(ev));
+      const s = new TrackedSession(file, (ev) => this.emitEvent(ev), inherit.get(file));
       this.sessions.set(file, s);
       changed = true;
       if (!initial) this.emitEvent({ type: 'sessionStart', session: s.info });
