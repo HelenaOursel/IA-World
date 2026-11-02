@@ -87,6 +87,13 @@ const PINS = [7, 10.5, 14, 17.5]
   .map((p) => `<rect x="${p - 0.75}" y="2" width="1.5" height="3" fill="#ffcf5a"/><rect x="${p - 0.75}" y="19" width="1.5" height="3" fill="#ffcf5a"/><rect x="2" y="${p - 0.75}" width="3" height="1.5" fill="#ffcf5a"/><rect x="19" y="${p - 0.75}" width="3" height="1.5" fill="#ffcf5a"/>`)
   .join('');
 export const CHIP_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">${PINS}<rect x="5" y="5" width="14" height="14" rx="2" fill="#1d7a4b"/><rect x="8.5" y="8.5" width="7" height="7" rx="1" fill="#15181f"/><rect x="11" y="11" width="2" height="2" fill="#3ddc97"/></svg>`;
+export const BAMBOO_SVG = `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><g transform="rotate(35 12 12)"><rect x="9.5" y="1" width="5" height="22" rx="2.5" fill="#7cc242"/><rect x="9" y="7.5" width="6" height="1.6" rx="0.8" fill="#4e8a26"/><rect x="9" y="15" width="6" height="1.6" rx="0.8" fill="#4e8a26"/><path d="M14.5 8.3C18 5.5 20.5 6.5 22.5 4.5 19.5 3.8 16.5 5 14.5 8.3Z" fill="#5fae34"/><path d="M9.5 16C6 14 4 15.5 1.8 14 4.5 12.5 7.5 13 9.5 16Z" fill="#5fae34"/></g></svg>`;
+
+// Cadeau à glisser sur un personnage, selon le thème
+const GIFTS = {
+  chip: { svg: CHIP_SVG, label: 'Puce', title: 'Glisse la puce sur un robot pour lui faire plaisir' },
+  bamboo: { svg: BAMBOO_SVG, label: 'Bambou', title: 'Glisse le bambou sur un panda pour lui faire plaisir' },
+};
 
 export class Hud {
   constructor(root, handlers) {
@@ -139,9 +146,10 @@ export class Hud {
     this.addLogTab('all', 'Tout', 'var(--cyan)');
 
     const controls = el('div', 'controls', root);
+    this.gift = GIFTS[handlers.gift] ?? GIFTS.chip;
     const chip = el('button', 'chip-item', controls);
-    chip.innerHTML = CHIP_SVG + '<span>Puce</span>';
-    chip.title = 'Glisse la puce sur un robot pour lui faire plaisir';
+    chip.innerHTML = this.gift.svg + `<span>${this.gift.label}</span>`;
+    chip.title = this.gift.title;
     chip.addEventListener('pointerdown', (e) => this.dragChip(e));
     // Les autres actions sont rangées dans un menu qui s'ouvre vers le haut.
     const menu = el('div', 'action-menu', controls);
@@ -196,11 +204,11 @@ export class Hud {
     this.status.textContent = live ? '● En direct' : '○ En pause';
   }
 
-  /** Fait glisser une puce depuis le bouton jusqu'au monde ; handlers.dropChip(x, y) dit si un robot l'a reçue. */
+  /** Fait glisser le cadeau (puce, bambou…) jusqu'au monde ; handlers.dropChip(x, y) dit si un personnage l'a reçu. */
   dragChip(e) {
     e.preventDefault();
     const ghost = el('div', 'chip-ghost', this.root);
-    ghost.innerHTML = CHIP_SVG;
+    ghost.innerHTML = this.gift.svg;
     const move = (ev) => {
       ghost.style.transform = `translate(${ev.clientX}px, ${ev.clientY}px) translate(-50%, -50%) rotate(${(ev.clientX % 40) - 20}deg)`;
       this.handlers.chipHover(ev.clientX, ev.clientY);

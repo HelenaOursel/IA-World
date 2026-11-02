@@ -433,7 +433,7 @@ function floorTexture(theme) {
   const k = size / (2 * R);
   const px = (x, z) => [(x + R) * k, (z + R) * k];
 
-  if (fl.paint) fl.paint(g, size);
+  if (fl.paint) fl.paint(g, size, k, px);
   else paintPanels(g, size, k, px, fl);
   // Marquages jaunes en pointillés autour de chaque poste
   g.setLineDash([26, 18]);
@@ -449,16 +449,18 @@ function floorTexture(theme) {
     g.restore();
   }
   g.setLineDash([]);
-  // Zone hachurée autour de la borne centrale
-  g.save();
-  g.translate(...px(0, 0));
-  g.strokeStyle = mark;
-  g.lineWidth = 0.08 * k;
-  g.setLineDash([0.22 * k, 0.22 * k]);
-  g.beginPath();
-  g.arc(0, 0, 2.75 * k, 0, Math.PI * 2);
-  g.stroke();
-  g.restore();
+  // Zone hachurée autour de la borne centrale (sauf si le thème dessine autre chose au centre)
+  if (fl.centerRing !== false) {
+    g.save();
+    g.translate(...px(0, 0));
+    g.strokeStyle = mark;
+    g.lineWidth = 0.08 * k;
+    g.setLineDash([0.22 * k, 0.22 * k]);
+    g.beginPath();
+    g.arc(0, 0, 2.75 * k, 0, Math.PI * 2);
+    g.stroke();
+    g.restore();
+  }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -509,9 +511,12 @@ function buildPlatform(scene, theme) {
   return thrusters;
 }
 
-function buildRacks(scene) {
+const RACKS = [[-2.35, -6.5], [2.35, -6.5], [-6.7, -2.4], [6.7, -2.4]];
+
+/** Baies de serveurs entre les postes ; un thème peut n'en garder que certaines (`theme.racks`). */
+function buildRacks(scene, spots = RACKS) {
   const racks = [];
-  for (const [x, z] of [[-2.35, -6.5], [2.35, -6.5], [-6.7, -2.4], [6.7, -2.4]]) {
+  for (const [x, z] of spots) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
     g.rotation.y = Math.atan2(-x, -z);
@@ -630,16 +635,22 @@ function buildPlan(st) {
   zoneMarker(st);
 }
 
-function buildAssembly(st) {
+function buildAssembly(st, gate) {
   const g = st.group;
-  g.add(mesh(cylinder(0.85, 0.92, 0.1, 40), metal('#232a39'), 0, 0.05, 0));
+  // Socle (dalle de pierre si le thème le demande) et cercle lumineux d'où sortent les agents
+  const base = gate?.base === 'stone' ? mat('#8a8f98', { roughness: 0.95 }) : metal('#232a39');
+  g.add(mesh(cylinder(0.85, 0.92, 0.1, 40), base, 0, 0.05, 0));
   const pad = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.68, 48), neon(st.color, 1.1));
   pad.rotation.x = -Math.PI / 2;
   pad.position.y = 0.105;
   g.add(pad);
-  for (const x of [-1.0, 1.0]) g.add(mesh(roundedBox(0.16, 2.1, 0.16, 0.03), metal('#2a3140'), x, 1.05, 0));
-  g.add(mesh(new THREE.BoxGeometry(2.16, 0.16, 0.16), metal('#2a3140'), 0, 2.15, 0));
-  for (const x of [-1.0, 1.0]) g.add(mesh(new THREE.BoxGeometry(0.03, 1.9, 0.03), neon(st.color, 1.2), x * 0.9, 1.05, 0.09));
+  // Certains thèmes remplacent le cadre du portail (torii)
+  if (gate?.build) gate.build(g);
+  else {
+    for (const x of [-1.0, 1.0]) g.add(mesh(roundedBox(0.16, 2.1, 0.16, 0.03), metal('#2a3140'), x, 1.05, 0));
+    g.add(mesh(new THREE.BoxGeometry(2.16, 0.16, 0.16), metal('#2a3140'), 0, 2.15, 0));
+    for (const x of [-1.0, 1.0]) g.add(mesh(new THREE.BoxGeometry(0.03, 1.9, 0.03), neon(st.color, 1.2), x * 0.9, 1.05, 0.09));
+  }
 
   const curtain = new THREE.ShaderMaterial({
     transparent: true,
@@ -655,8 +666,8 @@ function buildAssembly(st) {
       'float a = edge * (0.05 + power * 0.6) * (0.5 + 0.5 * lines);' +
       'gl_FragColor = vec4(color * 1.8 * a, 1.0); }',
   });
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 1.95), curtain);
-  plane.position.set(0, 1.08, 0);
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.8, gate?.curtain?.h ?? 1.95), curtain);
+  plane.position.set(0, gate?.curtain?.y ?? 1.08, 0);
   g.add(plane);
   st.curtain = curtain;
 
@@ -677,7 +688,7 @@ function buildAssembly(st) {
   g.add(face);
 
   const l = label(STATION_NAMES.agent, st.color);
-  l.position.set(0, 2.65, 0);
+  l.position.set(0, gate?.labelY ?? 2.65, 0);
   g.add(l);
   const light = new THREE.PointLight(st.color, 2, 4, 1.8);
   light.position.set(0, 1.2, 0.6);
@@ -688,7 +699,7 @@ function buildAssembly(st) {
   zoneMarker(st);
 }
 
-function buildTrash(st) {
+function buildTrash(st, showLabel = true) {
   // Le robot se place devant la corbeille, côté DOCS, sans gêner le tableau de planification.
   st.dir.set(-0.25, 0, 0.97).normalize();
   st.side.set(-st.dir.z, 0, st.dir.x);
@@ -747,9 +758,11 @@ function buildTrash(st) {
   lid.add(lidRim);
   body.add(lid);
 
-  const l = label(STATION_NAMES.trash, c);
-  l.position.set(0, 1.2, 0);
-  g.add(l);
+  if (showLabel) {
+    const l = label(STATION_NAMES.trash, c);
+    l.position.set(0, 1.2, 0);
+    g.add(l);
+  }
   const light = new THREE.PointLight(c, 1.2, 2.2, 1.8);
   light.position.set(0, 0.9, 0.4);
   g.add(light);
@@ -762,6 +775,12 @@ function buildTrash(st) {
 
 function buildDock(st, scene, theme) {
   const g = st.group;
+  // Un thème peut remplacer tout le socle (tour, anneaux et emplacements), comme le feu de camp
+  if (theme.dock) {
+    Object.assign(st, { rings: [] }, theme.dock(g, DOCK_ANGLES, DOCK_R));
+    scene.add(g);
+    return;
+  }
   g.add(mesh(octagon(new THREE.CylinderGeometry(1.25, 1.35, 0.14, 8)), metal('#232a39'), 0, 0.07, 0));
   g.add(octRim(1.26, 0.145, MARK, 0.025, 0.8));
   // Certains thèmes remplacent la tour (glace, antenne satellite)
@@ -843,7 +862,7 @@ export function buildWorld(scene, theme = {}) {
   scene.add(sun);
 
   const thrusters = buildPlatform(scene, theme);
-  const racks = buildRacks(scene);
+  const racks = buildRacks(scene, theme.racks);
   const conveyor = buildConveyor(scene, theme);
 
   const stations = {};
@@ -876,8 +895,8 @@ export function buildWorld(scene, theme = {}) {
   web.topLocal = new THREE.Vector3(0.65, 1.32, -0.2);
 
   buildPlan(stations.plan);
-  buildAssembly(stations.agent);
-  buildTrash(stations.trash);
+  buildAssembly(stations.agent, theme.gate);
+  buildTrash(stations.trash, theme.trashLabel !== false);
   for (const st of Object.values(stations)) scene.add(st.group);
   stations.dock = new Dock();
   buildDock(stations.dock, scene, theme);
@@ -956,13 +975,14 @@ export function buildWorld(scene, theme = {}) {
         web.screen.redraw();
       }
     }
-    if (timers.racks > 0.3) {
+    if (timers.racks > 0.3 && racks.length) {
       timers.racks = 0;
       racks[Math.floor(Math.random() * racks.length)].redraw();
     }
   }
 
-  return { stations, update };
+  // Poissons cliquables (rivière zen du Japon) : main.js les fait sauter avec jumpFish.
+  return { stations, update, kois: conveyor.kois ?? [], jumpFish: conveyor.jumpFish ?? (() => {}) };
 }
 
 export function docRows() {

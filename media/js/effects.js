@@ -24,6 +24,32 @@ function heartTexture() {
 }
 
 /** Petite puce électronique : circuit vert, broches dorées, cœur lumineux. */
+/** Tige de bambou (cadeau du thème Japon) : trois segments à nœuds et deux feuilles au sommet. */
+function buildBamboo() {
+  const g = new THREE.Group();
+  const stalk = new THREE.MeshStandardMaterial({ color: '#7cc242', roughness: 0.45 });
+  const node = new THREE.MeshStandardMaterial({ color: '#4e8a26', roughness: 0.5 });
+  const leaf = new THREE.MeshStandardMaterial({ color: '#5fae34', roughness: 0.6, side: THREE.DoubleSide });
+  for (let i = 0; i < 3; i++) {
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.12, 14), stalk);
+    seg.position.y = -0.13 + i * 0.13;
+    g.add(seg);
+  }
+  for (let i = 0; i < 4; i++) {
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.014, 14), node);
+    ring.position.y = -0.195 + i * 0.13;
+    g.add(ring);
+  }
+  for (const side of [-1, 1]) {
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 8), leaf);
+    l.scale.set(0.35, 2.2, 0.08);
+    l.position.set(side * 0.07, 0.17, 0);
+    l.rotation.z = -side * 0.9;
+    g.add(l);
+  }
+  return g;
+}
+
 function buildChip() {
   const g = new THREE.Group();
   g.add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.03, 0.26), new THREE.MeshStandardMaterial({ color: '#1d7a4b', roughness: 0.5 })));
@@ -168,12 +194,12 @@ export class Effects {
     }
   }
 
-  /** Puce électronique qui vole jusqu'au robot puis disparaît dedans. `target()` donne sa position actuelle. */
-  chip(from, target, onCatch, onArrive) {
-    const g = buildChip();
+  /** Cadeau (puce ou bambou) qui vole jusqu'au personnage puis disparaît dedans. `target()` donne sa position actuelle. */
+  chip(from, target, onCatch, onArrive, kind = 'chip') {
+    const g = kind === 'bamboo' ? buildBamboo() : buildChip();
     g.position.copy(from);
     this.scene.add(g);
-    this.chips.push({ g, t: 0, from: from.clone(), target, onCatch, onArrive, caught: false });
+    this.chips.push({ g, t: 0, from: from.clone(), target, onCatch, onArrive, caught: false, kind });
   }
 
   /** Projette des petits cubes depuis `pos`. glow > 1 les fait briller. */
@@ -285,7 +311,8 @@ export class Effects {
         const k = Math.min(1, (c.t - 1.1) / 0.3);
         c.g.scale.setScalar(Math.max(0.01, 1 - k));
         if (k >= 1) {
-          this.burst(end, { count: 26, colors: ['#3ddc97', '#ffd54f', '#ffffff'], speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
+          const colors = c.kind === 'bamboo' ? ['#7cc242', '#5fae34', '#e8f5c8'] : ['#3ddc97', '#ffd54f', '#ffffff'];
+          this.burst(end, { count: 26, colors, speed: 1.6, up: 1.8, life: 0.9, gravity: -2, size: 0.04 });
           this.scene.remove(c.g);
           release(c.g);
           c.onArrive?.();

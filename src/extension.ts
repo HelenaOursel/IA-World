@@ -18,7 +18,7 @@ function readOptions(): WatcherOptions {
   };
 }
 
-const THEMES = ['usine', 'banquise', 'espace', 'slime'];
+const THEMES = ['usine', 'banquise', 'espace', 'slime', 'japon'];
 
 // Thème choisi depuis le monde, appliqué sans attendre que le réglage soit enregistré.
 let chosenTheme: string | undefined;

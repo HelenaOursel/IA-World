@@ -17,6 +17,9 @@ const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : nul
 // Thème fourni par l'extension (data-theme), ou par ?theme= hors de VS Code.
 const theme = await loadTheme(document.body.dataset.theme || new URLSearchParams(location.search).get('theme'));
 const post = (m) => vscode?.postMessage(m);
+// Un thème peut avoir ses propres personnages (pandas du Japon), avec la même interface que Character.
+const CharacterClass = theme.character ?? Character;
+const SLEEP_TEXT = theme.sleepText ?? 'zZz En recharge';
 
 // type d'activité -> [poste, animation]
 const KIND_STATION = {
@@ -78,6 +81,7 @@ let hasSession = false;
 const hud = new Hud(app, {
   themes: THEME_LIST,
   theme: theme.id,
+  gift: theme.gift,
   toggleDemo: () => (demo.running ? stopDemo() : startDemo()),
   toggleRotate: () => {
     cam.autoRotate = !cam.autoRotate;
@@ -153,7 +157,12 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   }
 });
 renderer.domElement.addEventListener('pointerup', (e) => {
-  if (drag && !drag.pet && e.button === 0 && drag.moved < 5) setFollow(drag.robot ? drag.robot.id : null);
+  if (drag && !drag.pet && e.button === 0 && drag.moved < 5) {
+    // Clic sur une carpe koï (thème Japon) : elle saute en faisant un looping.
+    const fish = !drag.robot && fishAt(e.clientX, e.clientY);
+    if (fish) world.jumpFish(fish);
+    else setFollow(drag.robot ? drag.robot.id : null);
+  }
   drag = null;
   setHovered(null);
 });
@@ -191,10 +200,23 @@ function robotAt(x, y) {
   return null;
 }
 
+/** Carpe koï sous un point de l'écran, ou null. */
+function fishAt(x, y) {
+  if (!world.kois.length) return null;
+  const r = renderer.domElement.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(world.kois, true)[0];
+  return hit ? world.kois.find((k) => k === hit.object.parent) ?? null : null;
+}
+
 // ------------------------------------------------------------ interactions
 
 const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz <3', 'Encore !', 'Ronron…', 'Trop doux !'];
-const GIFT_LINES = ['Une puce ! Merci <3', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue <3'];
+const BAMBOO = theme.gift === 'bamboo';
+const GIFT_LINES = BAMBOO
+  ? ['Du bambou ! Merci <3', 'Miam, tout croquant !', 'Trop bien, merci !', 'Mon préféré !', 'Crunch crunch <3']
+  : ['Une puce ! Merci <3', 'Miam, du silicium !', 'Trop bien, merci !', 'Ma préférée !', 'Mise à jour reçue <3'];
 const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
 
 function petRobot(ch) {
@@ -225,8 +247,8 @@ function dropChip(x, y) {
     ch.react('love', 2.4);
     effects.heart(ch.topPosition(new THREE.Vector3()), 6);
     hud.say(ch.id, pickLine(GIFT_LINES), 'speech', KIND_ICONS.love, 3, false);
-    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `donne une puce à ${ch.name}`, ch.id);
-  });
+    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `${BAMBOO ? 'donne du bambou' : 'donne une puce'} à ${ch.name}`, ch.id);
+  }, theme.gift);
   return true;
 }
 
@@ -309,7 +331,7 @@ function updateDoodler(ch, dt) {
   if (job.done > 2) {
     ch.doodle = null;
     moveTo(ch, 'dock', 'sleep');
-    hud.setActivityText(ch.id, 'zZz En recharge');
+    hud.setActivityText(ch.id, SLEEP_TEXT);
   }
 }
 
@@ -336,7 +358,7 @@ const isMainId = (id) => id === 'main' || id.startsWith('main:');
 function ensureMain(id = 'main', title = '', animated = false) {
   if (chars.has(id)) return chars.get(id);
   const n = mainCount++;
-  const ch = new Character({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true, skin: theme.skin });
+  const ch = new CharacterClass({ id, name: n ? `Claude ${n + 1}` : 'Claude', agentType: shorten(title, 26), color: MAIN_COLORS[n % MAIN_COLORS.length], isMain: true, skin: theme.skin });
   addCharacter(ch);
   const spot = st.dock.claim(id);
   ch.stationKey = 'dock';
@@ -383,7 +405,7 @@ function bayCenter() {
 
 function spawnAgent(info, animated = true) {
   if (chars.has(info.id)) return chars.get(info.id);
-  const ch = new Character({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin });
+  const ch = new CharacterClass({ id: info.id, name: shorten(info.name, 28), agentType: info.agentType, color: colorFor(info.agentType), skin: theme.skin });
   ch.ownerId = info.ownerId;
   addCharacter(ch);
   if (animated) {
@@ -441,7 +463,7 @@ function goIdle(ch) {
   ch.idle = true;
   ch.pendingThrow = null;
   moveTo(ch, 'dock', 'sleep');
-  hud.setActivityText(ch.id, 'zZz En recharge');
+  hud.setActivityText(ch.id, SLEEP_TEXT);
 }
 
 function shorten(s, n) {

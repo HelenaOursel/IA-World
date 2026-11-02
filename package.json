@@ -68,12 +68,13 @@
         "iaworld.theme": {
           "type": "string",
           "default": "usine",
-          "enum": ["usine", "banquise", "espace", "slime"],
+          "enum": ["usine", "banquise", "espace", "slime", "japon"],
           "enumDescriptions": [
             "Usine futuriste et robots cubiques",
             "Banquise enneigée et pingouins",
             "Station spatiale et astronautes",
-            "Marais lumineux et slimes"
+            "Marais lumineux et slimes",
+            "Jardin japonais et pandas"
           ],
           "description": "Apparence de l'univers et des personnages."
         }
