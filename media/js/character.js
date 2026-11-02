@@ -588,6 +588,9 @@ export class Character {
     const x = r.t / r.duration;
     if (x >= 1) {
       this.reaction = null;
+      // Après une pirouette, l'angle vaut environ 360° : on le ramène à son équivalent entre -180° et 180°,
+      // pour qu'il garde la position atteinte au lieu de refaire le tour à l'envers.
+      this.pose.yaw = Math.atan2(Math.sin(this.pose.yaw), Math.cos(this.pose.yaw));
       return;
     }
     const fade = 1 - x;

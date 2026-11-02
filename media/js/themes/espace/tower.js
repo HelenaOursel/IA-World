@@ -33,8 +33,15 @@ export function buildSatelliteTower(g) {
   const receiver = new THREE.Mesh(sphere(0.045, 14, 10), neon('#4cc9f0', 2));
   receiver.position.y = 0.55;
   dish.add(receiver);
+  // Un astronaute peut venir régler l'antenne (voir actions.js) : la parabole tressaute pendant le réglage.
+  let adjusting = 0;
+  let last = 0;
+  g.userData.satellite = { head, adjust: (seconds) => (adjusting = seconds) };
   return (t) => {
-    head.rotation.y = Math.sin(t * 0.25) * 1.2;
-    receiver.material.color.set('#4cc9f0').multiplyScalar(Math.sin(t * 4) > 0 ? 2.4 : 0.6);
+    adjusting = Math.max(0, adjusting - (last ? t - last : 0));
+    last = t;
+    head.rotation.y = Math.sin(t * 0.25) * 1.2 + (adjusting > 0 ? Math.sin(t * 23) * 0.08 : 0);
+    const blink = adjusting > 0 ? Math.sin(t * 14) > 0 : Math.sin(t * 4) > 0;
+    receiver.material.color.set('#4cc9f0').multiplyScalar(blink ? 2.4 : 0.6);
   };
 }

@@ -22,6 +22,23 @@ export const actions = {
         f.expr = 'happy';
       },
     },
+    // Flotte à hauteur de la parabole, bras levés, et règle l'antenne à petits gestes
+    adjustAntenna: {
+      pose(p, t) {
+        p.lift = 0.7 + Math.sin(t * 2) * 0.04;
+        p.sRx = -2.6 + Math.sin(t * 9) * 0.15;
+        p.sRz = 0.2 + Math.cos(t * 9) * 0.1;
+        p.eR = -0.5;
+        p.sLx = -2.4;
+        p.sLz = -0.25;
+        p.eL = -0.3;
+        p.tiltX = -0.25;
+      },
+      face(f) {
+        f.expr = 'focus';
+        f.eyeY = -0.8;
+      },
+    },
     // Grands bonds lents, bras en l'air
     moonHop: {
       pose(p, t) {
@@ -39,6 +56,40 @@ export const actions = {
   },
 
   idle: [
+    {
+      label: "Réglage de l'antenne",
+      start(ch, tools, s) {
+        // Rejoint l'antenne du milieu par le côté (un quart de tour depuis sa place), face à elle :
+        // on le voit mieux qu'en arrivant par derrière, et il ne traverse pas le mât.
+        const a = Math.atan2(ch.root.position.x, ch.root.position.z) + (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2);
+        const spot = new THREE.Vector3(Math.sin(a), 0, Math.cos(a)).multiplyScalar(0.95);
+        tools.walk(ch, spot, 'adjustAntenna', Math.atan2(-spot.x, -spot.z));
+        s.satellite = tools.stations.dock.group.userData.satellite;
+        s.spark = 0;
+      },
+      update(ch, dt, time, tools, s) {
+        if (ch.moving) return time > 15;
+        s.at ??= time;
+        const k = time - s.at;
+        if (!s.started) {
+          s.started = true;
+          s.satellite?.adjust(3);
+          tools.say(ch, "Petit réglage de l'antenne…", 2.5);
+        }
+        // Étincelles sur la parabole pendant le réglage
+        s.spark -= dt;
+        if (s.satellite && k < 3 && s.spark <= 0) {
+          s.spark = 0.3;
+          tools.effects.burst(s.satellite.head.getWorldPosition(new THREE.Vector3()), { count: 4, colors: ['#ffd54f', '#4cc9f0', '#ffffff'], speed: 0.8, up: 0.8, life: 0.5, gravity: -2, size: 0.03 });
+        }
+        if (k > 3.2 && !s.done) {
+          s.done = true;
+          ch.react('wave', 1.2);
+          tools.say(ch, 'Signal parfait !', 2);
+        }
+        return k > 4.4;
+      },
+    },
     {
       label: 'Apesanteur',
       start(ch, tools, s) {
