@@ -3,6 +3,7 @@
 import { actions } from './actions.js';
 import { buildCampfire } from './campfire.js';
 import { japonDecor, paintGrass } from './decor.js';
+import { buildJapaneseDesk } from './desk.js';
 import { gift } from './gift.js';
 import { doodles } from './doodles.js';
 import { PandaCharacter } from './panda.js';
@@ -25,6 +26,7 @@ export default {
   gate: { build: buildTorii, curtain: { h: 1.5, y: 0.86 }, labelY: 2.85, base: 'stone' },
   // Une seule baie de serveurs (entre Code et Terminal) : cerisier et bambous prennent les autres places.
   racks: [[6.7, -2.4]],
+  desk: buildJapaneseDesk,
   doodles,
   // Pas de corbeille : on jette les fichiers au feu, et on ne s'amuse pas à faire des paniers.
   trash: 'fire',
