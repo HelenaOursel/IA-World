@@ -1,6 +1,7 @@
 // Thème Japon : pelouse fleurie, cerisier, bosquet de bambous, maneki-neko doré et cuirassé Yamato à quai.
 import * as THREE from '../../../vendor/three.module.min.js';
 import { cylinder, mat, mesh, sphere } from '../../geometry.js';
+import { buildIsland } from './island.js';
 import { buildYamato } from './yamato.js';
 
 /** Pelouse fleurie, avec une clairière de terre battue autour du feu de camp. */
@@ -261,14 +262,16 @@ function buildChrysanthemum(scene, [x, z]) {
 
 /** Décor du thème : cerisier entre Recherche et Docs, bambous entre Planification et Code,
  * maneki-neko entre Docs et Planification (à la place de la corbeille), Yamato à quai,
- * chrysanthème doré au dos de la baie de serveurs. */
+ * chrysanthème doré au dos de la baie de serveurs, le tout sur une île au milieu d'un lac face au Fuji. */
 export function japonDecor(scene) {
+  const island = buildIsland(scene);
   const petals = buildCherry(scene, [-6.7, -2.4]);
   const bamboos = buildBambooGrove(scene, [2.35, -6.5]);
   const paw = buildManekiNeko(scene, [-2.45, -5.3]);
   buildChrysanthemum(scene, [6.7, -2.4]);
   buildYamato(scene, 8.4 * Math.cos(Math.PI / 8), 0.5);
   return (t) => {
+    island(t);
     // Le maneki-neko salue : la patte se lève et s'abaisse doucement
     paw.rotation.x = -0.15 + Math.sin(t * 2.4) * 0.35;
     // Pétales de cerisier qui tombent en spirale, puis repartent du houppier.
