@@ -314,13 +314,17 @@ function label(text, color) {
 }
 
 /** Bureau bas avec écran et clavier, à la taille des robots. */
-function workstation(st, draw, { sw = 1.05, sh = 0.62, cw = 512, ch = 320 } = {}) {
+function workstation(st, draw, { sw = 1.05, sh = 0.62, cw = 512, ch = 320, desk } = {}) {
   const g = st.group;
   const c = st.color;
-  g.add(mesh(roundedBox(1.7, 0.06, 0.72, 0.025), metal('#262d3a'), 0, 0.5, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.7, 0.018, 0.018), neon(c, 2), 0, 0.5, 0.36));
-  for (const x of [-0.8, 0.8]) g.add(mesh(roundedBox(0.07, 0.48, 0.64, 0.02), metal('#1a1f2a'), x, 0.24, 0));
-  g.add(mesh(roundedBox(1.5, 0.3, 0.04, 0.015), metal('#151a24'), 0, 0.3, -0.28));
+  // Le thème peut fournir son propre bureau (plateau à 0,53 m, l'écran et le clavier restent ceux-ci)
+  if (desk) desk(g, c);
+  else {
+    g.add(mesh(roundedBox(1.7, 0.06, 0.72, 0.025), metal('#262d3a'), 0, 0.5, 0));
+    g.add(mesh(new THREE.BoxGeometry(1.7, 0.018, 0.018), neon(c, 2), 0, 0.5, 0.36));
+    for (const x of [-0.8, 0.8]) g.add(mesh(roundedBox(0.07, 0.48, 0.64, 0.02), metal('#1a1f2a'), x, 0.24, 0));
+    g.add(mesh(roundedBox(1.5, 0.3, 0.04, 0.015), metal('#151a24'), 0, 0.3, -0.28));
+  }
 
   g.add(mesh(roundedBox(0.66, 0.03, 0.22, 0.012), metal('#11151d'), 0, 0.545, 0.14));
   const keys = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.18), new THREE.MeshBasicMaterial({ map: keyTexture(), transparent: true, color: c }));
@@ -881,23 +885,23 @@ export function buildWorld(scene, theme = {}) {
 
   const read = stations.read;
   read.doc = { file: 'README.md', rows: docRows(), cursor: 0 };
-  workstation(read, (ctx, w, h) => drawDocs(ctx, w, h, read.doc));
+  workstation(read, (ctx, w, h) => drawDocs(ctx, w, h, read.doc), { desk: theme.desk });
 
   const search = stations.search;
   Object.assign(search, { query: '', angle: 0, blips: [] });
-  workstation(search, (ctx, w, h) => drawRadar(ctx, w, h, search));
+  workstation(search, (ctx, w, h) => drawRadar(ctx, w, h, search), { desk: theme.desk });
 
   const write = stations.write;
   write.code = { file: 'README.md', rows: Array.from({ length: 8 }, randomCodeRow), scroll: 0 };
-  workstation(write, (ctx, w, h) => drawCode(ctx, w, h, write.code), { sw: 1.2, sh: 0.7 });
+  workstation(write, (ctx, w, h) => drawCode(ctx, w, h, write.code), { sw: 1.2, sh: 0.7, desk: theme.desk });
 
   const bash = stations.bash;
   bash.lines = [{ t: theme.shell ?? 'robot@usine:~$', c: '#39ff9f' }];
-  workstation(bash, (ctx, w, h) => drawTerminal(ctx, w, h, bash.lines));
+  workstation(bash, (ctx, w, h) => drawTerminal(ctx, w, h, bash.lines), { desk: theme.desk });
 
   const web = stations.web;
   web.net = networkGraph();
-  workstation(web, (ctx, w, h) => drawNetwork(ctx, w, h, web.net));
+  workstation(web, (ctx, w, h) => drawNetwork(ctx, w, h, web.net), { desk: theme.desk });
   web.group.add(mesh(cylinder(0.025, 0.03, 0.8, 8), metal('#3a4150'), 0.65, 0.9, -0.2));
   const beacon = new THREE.Mesh(sphere(0.06), neon(web.color, 3));
   beacon.position.set(0.65, 1.32, -0.2);
