@@ -14,6 +14,7 @@
 //                            (sticks : bâtons à griller, que les activités du thème trouvent dans stations.dock)
 //   gate                     { build(group), curtain: { h, y }, labelY, base: 'stone' } remplace le cadre du portail
 //   racks                    emplacements [x, z] des baies de serveurs à garder
+//   doodles                  dessins au tableau : { shapes: { nom: () => traits }, weights, words, chalk, startLines, doneLines }
 //   trash: 'fire'            pas de corbeille : ce qui est supprimé est jeté dans le feu au centre
 //   idleThrow: false         pas de paniers de papier pour s'amuser quand rien ne se passe
 //   sleepText                texte affiché quand le personnage se repose
