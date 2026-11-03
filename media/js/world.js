@@ -314,10 +314,21 @@ function label(text, color) {
 }
 
 /** Bureau bas avec écran et clavier, à la taille des robots. */
-function workstation(st, draw, { sw = 1.05, sh = 0.62, cw = 512, ch = 320, desk } = {}) {
+function workstation(st, draw, { sw = 1.05, sh = 0.62, cw = 512, ch = 320, desk } = {}, theme = {}) {
   const g = st.group;
   const c = st.color;
-  // Le thème peut fournir son propre bureau (plateau à 0,53 m, l'écran et le clavier restent ceux-ci)
+  // Un thème peut remplacer tout le poste, bureau et clavier compris (prise de droïde…) ;
+  // l'écran, l'étiquette et le cercle au sol restent.
+  if (theme.workstation) {
+    st.screen = new CanvasScreen(cw, ch, draw);
+    const { labelY = 2 } = theme.workstation(st, st.screen, { sw, sh }) ?? {};
+    const l = label(STATION_NAMES[st.key], c);
+    l.position.set(0, labelY, 0);
+    g.add(l);
+    zoneMarker(st);
+    return;
+  }
+  // Ou seulement le bureau (plateau à 0,53 m, l'écran et le clavier restent ceux-ci)
   if (desk) desk(g, c);
   else {
     g.add(mesh(roundedBox(1.7, 0.06, 0.72, 0.025), metal('#262d3a'), 0, 0.5, 0));
@@ -518,13 +529,21 @@ function buildPlatform(scene, theme) {
 
 const RACKS = [[-2.35, -6.5], [2.35, -6.5], [-6.7, -2.4], [6.7, -2.4]];
 
-/** Baies de serveurs entre les postes ; un thème peut n'en garder que certaines (`theme.racks`). */
-function buildRacks(scene, spots = RACKS) {
+/**
+ * Baies de serveurs entre les postes ; un thème peut n'en garder que certaines (`theme.racks`)
+ * ou construire autre chose à leur place (`theme.rack(group)` → animate(t), comme les holocrons).
+ */
+function buildRacks(scene, spots = RACKS, build) {
   const racks = [];
   for (const [x, z] of spots) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
     g.rotation.y = Math.atan2(-x, -z);
+    if (build) {
+      racks.push({ redraw() {}, animate: build(g) });
+      scene.add(g);
+      continue;
+    }
     g.add(mesh(roundedBox(1.0, 2.3, 0.75, 0.04), metal('#141923'), 0, 1.15, 0));
     const screen = new CanvasScreen(128, 256, (ctx, w, h) => {
       ctx.fillStyle = '#05070c';
@@ -552,6 +571,15 @@ function buildRacks(scene, spots = RACKS) {
 // Le tapis est décalé vers la gauche pour laisser la corbeille au bout de la ligne.
 const CONVEYOR_X = -0.7;
 
+/** Caisse par défaut du tapis roulant, avec un liseré de couleur. */
+function crate(i) {
+  const c = new THREE.Group();
+  c.add(mesh(roundedBox(0.4, 0.34, 0.4, 0.03), metal('#343c4c')));
+  c.add(mesh(new THREE.BoxGeometry(0.41, 0.03, 0.41), neon(['#4cc9f0', '#ff7a1a', '#9b5de5', '#3ddc97', '#ffc53d'][i % 5], 0.9)));
+  c.userData.y = 0.68;
+  return c;
+}
+
 function buildConveyor(scene, theme) {
   // Certains thèmes remplacent le tapis (rivière, train d'astéroïdes)
   if (theme.conveyor) return theme.conveyor(scene, { x: CONVEYOR_X, z: 6.3, edgeZ: APOTHEM - 0.02 });
@@ -563,12 +591,13 @@ function buildConveyor(scene, theme) {
   const belt = mesh(new THREE.BoxGeometry(5.4, 0.03, 0.6), beltMat, 0, 0.495, 0);
   g.add(belt);
   for (const z of [-0.34, 0.34]) g.add(mesh(new THREE.BoxGeometry(5.6, 0.03, 0.02), neon(MARK, 0.7), 0, 0.49, z));
+  // Objets transportés : ceux du thème (pièces de machines…), sinon des caisses
+  const makers = theme.conveyorItems ?? [crate];
+  const count = theme.conveyorItems ? makers.length : 5;
   const crates = [];
-  for (let i = 0; i < 5; i++) {
-    const c = new THREE.Group();
-    c.add(mesh(roundedBox(0.4, 0.34, 0.4, 0.03), metal('#343c4c')));
-    c.add(mesh(new THREE.BoxGeometry(0.41, 0.03, 0.41), neon(['#4cc9f0', '#ff7a1a', '#9b5de5', '#3ddc97', '#ffc53d'][i], 0.9)));
-    c.userData.x = -2.6 + i * 1.1;
+  for (let i = 0; i < count; i++) {
+    const c = makers[i % makers.length](i);
+    c.userData.x = -2.75 + (i + 0.5) * (5.5 / count);
     g.add(c);
     crates.push(c);
   }
@@ -579,7 +608,7 @@ function buildConveyor(scene, theme) {
       if (c.userData.x > 2.75) c.userData.x -= 5.5;
       const x = c.userData.x;
       const edge = Math.min(1, (2.75 - Math.abs(x)) / 0.3);
-      c.position.set(x, 0.68, 0);
+      c.position.set(x, c.userData.y, 0);
       c.scale.setScalar(Math.max(0.01, edge));
     }
   };
@@ -650,7 +679,8 @@ function buildAssembly(st, gate) {
   pad.position.y = 0.105;
   g.add(pad);
   // Certains thèmes remplacent le cadre du portail (torii)
-  if (gate?.build) gate.build(g);
+  // build peut renvoyer animate(power, t) : une porte qui s'ouvre quand un agent arrive ou repart
+  if (gate?.build) st.animateGate = gate.build(g) ?? null;
   else {
     for (const x of [-1.0, 1.0]) g.add(mesh(roundedBox(0.16, 2.1, 0.16, 0.03), metal('#2a3140'), x, 1.05, 0));
     g.add(mesh(new THREE.BoxGeometry(2.16, 0.16, 0.16), metal('#2a3140'), 0, 2.15, 0));
@@ -877,7 +907,7 @@ export function buildWorld(scene, theme = {}) {
   scene.add(sun);
 
   const thrusters = buildPlatform(scene, theme);
-  const racks = buildRacks(scene, theme.racks);
+  const racks = buildRacks(scene, theme.racks, theme.rack);
   const conveyor = buildConveyor(scene, theme);
 
   const stations = {};
@@ -885,23 +915,23 @@ export function buildWorld(scene, theme = {}) {
 
   const read = stations.read;
   read.doc = { file: 'README.md', rows: docRows(), cursor: 0 };
-  workstation(read, (ctx, w, h) => drawDocs(ctx, w, h, read.doc), { desk: theme.desk });
+  workstation(read, (ctx, w, h) => drawDocs(ctx, w, h, read.doc), { desk: theme.desk }, theme);
 
   const search = stations.search;
   Object.assign(search, { query: '', angle: 0, blips: [] });
-  workstation(search, (ctx, w, h) => drawRadar(ctx, w, h, search), { desk: theme.desk });
+  workstation(search, (ctx, w, h) => drawRadar(ctx, w, h, search), { desk: theme.desk }, theme);
 
   const write = stations.write;
   write.code = { file: 'README.md', rows: Array.from({ length: 8 }, randomCodeRow), scroll: 0 };
-  workstation(write, (ctx, w, h) => drawCode(ctx, w, h, write.code), { sw: 1.2, sh: 0.7, desk: theme.desk });
+  workstation(write, (ctx, w, h) => drawCode(ctx, w, h, write.code), { sw: 1.2, sh: 0.7, desk: theme.desk }, theme);
 
   const bash = stations.bash;
   bash.lines = [{ t: theme.shell ?? 'robot@usine:~$', c: '#39ff9f' }];
-  workstation(bash, (ctx, w, h) => drawTerminal(ctx, w, h, bash.lines), { desk: theme.desk });
+  workstation(bash, (ctx, w, h) => drawTerminal(ctx, w, h, bash.lines), { desk: theme.desk }, theme);
 
   const web = stations.web;
   web.net = networkGraph();
-  workstation(web, (ctx, w, h) => drawNetwork(ctx, w, h, web.net), { desk: theme.desk });
+  workstation(web, (ctx, w, h) => drawNetwork(ctx, w, h, web.net), { desk: theme.desk }, theme);
   web.group.add(mesh(cylinder(0.025, 0.03, 0.8, 8), metal('#3a4150'), 0.65, 0.9, -0.2));
   const beacon = new THREE.Mesh(sphere(0.06), neon(web.color, 3));
   beacon.position.set(0.65, 1.32, -0.2);
@@ -951,8 +981,10 @@ export function buildWorld(scene, theme = {}) {
     bay.power = Math.max(0, bay.power - dt * 0.35);
     bay.curtain.uniforms.time.value = t;
     bay.curtain.uniforms.power.value = bay.power;
+    bay.animateGate?.(bay.power, t);
 
     for (const st of Object.values(stations)) {
+      st.animate?.(t, st.busy);
       if (!st.ring) continue;
       const target = st.busy ? 0.7 : 0.25;
       st.ring.material.opacity += (target - st.ring.material.opacity) * Math.min(1, dt * 4);
@@ -993,6 +1025,7 @@ export function buildWorld(scene, theme = {}) {
         web.screen.redraw();
       }
     }
+    for (const r of racks) r.animate?.(t);
     if (timers.racks > 0.3 && racks.length) {
       timers.racks = 0;
       racks[Math.floor(Math.random() * racks.length)].redraw();

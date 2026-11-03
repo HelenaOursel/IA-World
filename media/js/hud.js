@@ -156,6 +156,12 @@ export class Hud {
       });
       return b;
     };
+    // Sous-menu des animations du personnage (celui que suit la caméra, sinon Claude)
+    const animBtn = el('button', 'menu-sub', this.menuList, '✦ Animations ›');
+    animBtn.setAttribute('role', 'menuitem');
+    animBtn.addEventListener('click', () => this.openAnimations());
+    this.animList = el('div', 'menu-list anim-list hidden', menu);
+    this.animList.setAttribute('role', 'menu');
     this.demoBtn = item('▶ Démo', () => handlers.toggleDemo());
     this.rotateBtn = item('⟳ Rotation', () => handlers.toggleRotate());
     item('⌖ Recentrer', () => handlers.resetCamera());
@@ -172,6 +178,23 @@ export class Hud {
     el('div', 'empty-text', this.empty, 'Lance Claude Code dans ce workspace : ses robots se mettront au travail ici, en direct.');
     const demo = el('button', 'primary', this.empty, '▶ Voir la démo');
     demo.addEventListener('click', () => handlers.toggleDemo());
+    // Fermeture de la fenêtre d'attente, mémorisée pour les prochaines ouvertures
+    const close = el('button', 'empty-close', this.empty, '×');
+    close.title = 'Fermer';
+    close.addEventListener('click', () => {
+      this.emptyDismissed = true;
+      try {
+        localStorage.setItem('iaworld.emptyDismissed', '1');
+      } catch {
+        /* stockage indisponible : fermée pour cette ouverture seulement */
+      }
+      this.showEmpty(false);
+    });
+    try {
+      this.emptyDismissed = localStorage.getItem('iaworld.emptyDismissed') === '1';
+    } catch {
+      this.emptyDismissed = false;
+    }
   }
 
   /** Masque tout le HUD sauf l'encart IA World et le bouton du cadeau. */
@@ -226,7 +249,30 @@ export class Hud {
     this.noticeTimer = setTimeout(() => this.noticeEl.classList.add('hidden'), seconds * 1000);
   }
 
-  toggleMenu(open = this.menuList.classList.contains('hidden')) {
+  /** Remplit et affiche le sous-menu des animations. */
+  openAnimations() {
+    const l = this.animList;
+    l.textContent = '';
+    const back = el('button', 'menu-back', l, '‹ Retour');
+    back.addEventListener('click', () => {
+      l.classList.add('hidden');
+      this.menuList.classList.remove('hidden');
+    });
+    el('div', 'menu-head', l, 'Pour : ' + (this.handlers.animationTarget() || '—'));
+    this.handlers.animations().forEach((label, i) => {
+      const b = el('button', '', l, label);
+      b.setAttribute('role', 'menuitem');
+      b.addEventListener('click', () => {
+        this.handlers.playAnimation(i);
+        this.toggleMenu(false);
+      });
+    });
+    this.menuList.classList.add('hidden');
+    l.classList.remove('hidden');
+  }
+
+  toggleMenu(open = this.menuList.classList.contains('hidden') && this.animList.classList.contains('hidden')) {
+    this.animList.classList.add('hidden');
     this.menuList.classList.toggle('hidden', !open);
     this.menuBtn.classList.toggle('open', open);
     this.menuBtn.setAttribute('aria-expanded', String(open));
@@ -242,7 +288,7 @@ export class Hud {
   }
 
   showEmpty(show) {
-    this.empty.classList.toggle('hidden', !show);
+    this.empty.classList.toggle('hidden', !show || this.emptyDismissed);
   }
 
   // ------------------------------------------------------- personnages

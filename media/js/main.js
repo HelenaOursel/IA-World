@@ -90,6 +90,9 @@ const hud = new Hud(app, {
   follow: (id) => setFollow(followId === id ? null : id),
   pickSession: () => post({ type: 'pickSession' }),
   setTheme: (id) => requestTheme(id),
+  animations: () => ANIMATIONS.map((a) => a.label),
+  animationTarget: () => animationTarget()?.name ?? '',
+  playAnimation: (i) => playAnimation(i),
   gift: theme.gift,
   giftHover: (x, y) => giftHover(x, y),
   dropGift: (x, y) => dropGift(x, y),
@@ -593,13 +596,14 @@ const actionTools = {
   giftTo: (ch, from, onArrive) => effects.gift(theme.gift, from, () => ch.root.localToWorld(new THREE.Vector3(0, ch.bodyY, ch.size * 0.3)), null, onArrive),
 };
 
-function startThemeAction(ch) {
+function startThemeAction(ch, chosen) {
   // Certaines activités sont réservées à certains personnages (`can`)
   const list = theme.actions.idle.filter((a) => a.can?.(ch) ?? true);
   if (!list.length) return;
   const total = list.reduce((s, a) => s + (a.weight ?? 1), 0);
   let r = Math.random() * total;
-  const def = list.find((a) => (r -= a.weight ?? 1) < 0) ?? list[0];
+  // `chosen` : activité demandée depuis le menu Animations
+  const def = chosen ?? list.find((a) => (r -= a.weight ?? 1) < 0) ?? list[0];
   if (ch.stationKey) st[ch.stationKey].release(ch.id);
   ch.stationKey = null;
   ch.wandering = false;
@@ -625,6 +629,92 @@ function updateThemeAction(ch, dt) {
   endThemeAction(ch);
   moveTo(ch, 'dock', 'sleep');
   hud.setActivityText(ch.id, SLEEP_TEXT);
+}
+
+// ------------------------------------------------- animations à la demande
+
+/** Personnage visé par le menu Animations : celui que suit la caméra, sinon le premier Claude. */
+function animationTarget() {
+  const alive = [...chars.values()].filter((c) => !c.leaving);
+  return (followId && chars.get(followId)) || alive.find((c) => c.isMain) || alive[0] || null;
+}
+
+/** Interrompt ce que fait le personnage pour qu'il joue l'animation demandée. */
+function freeForAnimation(ch) {
+  if (ch.themeAct) endThemeAction(ch);
+  if (ch.doodle) {
+    if (ch.doodle.d) ch.doodle.d.drawing = false;
+    ch.doodle = null;
+  }
+  ch.pendingThrow = null;
+  ch.wandering = false;
+  ch.idle = true;
+  ch.lastEventAt = performance.now();
+  if (ch.action === 'sleep') ch.setAction('idle');
+}
+
+const ANIMATIONS = [
+  // Activités propres au thème (themes/<id>/actions.js)
+  ...(theme.actions?.idle ?? []).map((def) => ({
+    label: def.label,
+    run(ch) {
+      if (def.can && !def.can(ch)) return hud.notice(`${ch.name} ne peut pas faire ça pour l'instant.`, 3);
+      startThemeAction(ch, def);
+    },
+  })),
+  {
+    label: 'Gribouillis au tableau',
+    run(ch) {
+      if (!canDoodle()) return hud.notice('Le tableau est occupé.', 3);
+      startDoodle(ch);
+    },
+  },
+  ...(theme.idleThrow !== false
+    ? [
+        {
+          label: 'Panier de papier',
+          run(ch) {
+            moveTo(ch, 'trash', 'aim');
+            ch.pendingThrow = { kind: 'ball', real: false };
+            ch.wandering = true;
+          },
+        },
+      ]
+    : []),
+  {
+    label: 'Balade',
+    run(ch) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 1.8;
+      ch.goTo({ pos: new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r), face: a + Math.PI }, 'idle');
+      ch.wandering = true;
+    },
+  },
+  {
+    label: 'Saut de joie',
+    run(ch) {
+      ch.react('jump', 1.4);
+      effects.burst(ch.topPosition(new THREE.Vector3()), { count: 34, colors: ['#ff7a1a', '#ffc53d', '#3ddc97', '#4cc9f0', '#b388ff'], speed: 2.2, up: 3, life: 1.4, gravity: -5, size: 0.06 });
+    },
+  },
+  { label: 'Coucou', run: (ch) => ch.react('wave', 1.8) },
+  {
+    label: 'Yeux en cœur',
+    run(ch) {
+      ch.react('love', 2.4);
+      effects.heart(ch.topPosition(new THREE.Vector3()), 6);
+    },
+  },
+  { label: 'Surprise', run: (ch) => ch.react('surprise', 1) },
+  { label: 'Dodo', run: (ch) => goIdle(ch) },
+];
+
+function playAnimation(i) {
+  const ch = animationTarget();
+  const anim = ANIMATIONS[i];
+  if (!ch || !anim) return;
+  freeForAnimation(ch);
+  anim.run(ch);
+  hud.say(ch.id, '~ ' + anim.label, 'action', '', 2, false);
 }
 
 function setTodos(todos) {

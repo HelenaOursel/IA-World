@@ -106,8 +106,8 @@ body {
   backdrop-filter: none;
 }
 
-/* HUD masqué : seuls l'encart IA World et le bouton Puce restent. */
-.hud-hidden .overlay,
+/* HUD masqué : seuls l'encart IA World le bouton du cadeau et les bulles de parole restent. */
+.hud-hidden .overlay .name,
 .hud-hidden .agents,
 .hud-hidden .log,
 .hud-hidden .empty,
@@ -422,6 +422,25 @@ body {
   backdrop-filter: none;
 }
 
+/* Sous-menu des animations : liste qui défile si elle est longue */
+.anim-list {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.menu-head {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 2px 8px 4px;
+  white-space: nowrap;
+}
+
+.menu-back {
+  color: var(--muted);
+}
+
 @keyframes menu-in {
   from {
     opacity: 0;
@@ -483,6 +502,27 @@ button.primary:hover {
   backdrop-filter: blur(10px);
   z-index: 4;
   max-width: 360px;
+}
+
+.empty-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.empty-close:hover {
+  color: var(--text);
+  box-shadow: none;
 }
 
 .empty-title {

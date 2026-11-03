@@ -13,14 +13,19 @@
 //   tower                    { build(group) → animate(t), rings } remplace la tour centrale
 //   dock(group, angles, r)   remplace tout le socle central ; renvoie { light, animateTower(t), sticks? }
 //                            (sticks : bâtons à griller, que les activités du thème trouvent dans stations.dock)
-//   gate                     { build(group), curtain: { h, y }, labelY, base: 'stone' } remplace le cadre du portail
+//   gate                     { build(group), curtain: { h, y }, labelY, base: 'stone' } remplace le cadre du portail ;
+//                            build peut renvoyer animate(power, t), appelée à chaque image (power > 0 : agent qui arrive ou repart)
 //   racks                    emplacements [x, z] des baies de serveurs à garder
+//   rack(group)              construit autre chose qu'une baie de serveurs à ces emplacements ; renvoie animate(t)
 //   desk(group, couleur)     remplace le bureau des postes (plateau à 0,53 m) ; écran et clavier sont gardés
+//   workstation(st, screen, { sw, sh })  remplace tout le poste, bureau et clavier compris ; renvoie { labelY } ;
+//                            il doit définir st.keys (point des étincelles) et peut définir st.animate(t, occupé)
 //   doodles                  dessins au tableau : { shapes: { nom: () => traits }, weights, words, chalk, startLines, doneLines }
 //   trash: 'fire'            pas de corbeille : ce qui est supprimé est jeté dans le feu au centre
 //   idleThrow: false         pas de paniers de papier pour s'amuser quand rien ne se passe
 //   sleepText                texte affiché quand le personnage se repose
-//   conveyor(scene, place)   remplace le tapis roulant ; renvoie animate(t, dt) (avec .kois et .jumpFish s'il y a des poissons cliquables)
+//   conveyor(scene, place)   remplace le tapis roulant ; renvoie animate(t, dt)
+//   conveyorItems            objets transportés par le tapis : [(i) => Object3D avec userData.y] (avec .kois et .jumpFish s'il y a des poissons cliquables)
 //   decor(scene)             décor propre au thème ; renvoie animate(t, dt)
 //   gift                     cadeau à glisser sur un personnage : { name, article, svg, build(), colors, lines }
 //   actions                  { poses, idle } :
@@ -37,6 +42,7 @@ export const THEME_LIST = [
   { id: 'espace', name: 'Espace · astronautes' },
   { id: 'slime', name: 'Slime · gelée' },
   { id: 'japon', name: 'Japon · pandas' },
+  { id: 'vaisseau', name: 'Vaisseau · droïdes' },
 ];
 
 export const DEFAULT_THEME = 'usine';

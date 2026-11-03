@@ -33,6 +33,7 @@ La disposition des postes reste la même, pour que ce que font les personnages r
 | Banquise | pingouins    | banquise enneigée sur la mer, igloos, sapins, neige qui tombe |
 | Espace   | astronautes  | station spatiale, planète à anneau, astéroïdes, panneaux solaires |
 | Slime    | slimes       | marais lumineux, champignons, flaques de gelée et bulles      |
+| Vaisseau | droïdes      | pont de vaisseau en hyperespace, table holographique, holocrons à la place des serveurs |
 | Japon    | pandas       | jardin d'herbe, feu de camp, cerisier, bambous, torii, rivière zen à koï, cuirassé Yamato à quai |
 
 ## Utilisation
@@ -60,7 +61,7 @@ Par défaut, elle suit la session la plus récente du workspace ouvert.
 | `iaworld.claudeDir`         | (vide)  | Dossier Claude ; vide = `$CLAUDE_CONFIG_DIR` ou `~/.claude`   |
 | `iaworld.followAllProjects` | `false` | Suivre la session la plus récente de n'importe quel projet    |
 | `iaworld.autoOpen`          | `false` | Ouvrir le monde automatiquement quand Claude se met au travail |
-| `iaworld.theme`             | `usine` | Thème de l'univers : `usine`, `banquise`, `espace`, `slime` ou `japon` |
+| `iaworld.theme`             | `usine` | Thème de l'univers : `usine`, `banquise`, `espace`, `slime`, `japon` ou `vaisseau` |
 
 ## Développement
 
@@ -75,6 +76,6 @@ Appuyer sur F5 dans VS Code lance une fenêtre de développement avec l'extensio
 - `src/` : extension (lecture des transcripts, panneau webview).
 - `media/js/` : monde 3D (three.js) ; `world.js` pour l'usine commune (postes, plate-forme),
   `character.js` pour les animations des personnages, `main.js` pour la traduction des événements en animations.
-- `media/js/themes/` : un dossier par thème (`usine`, `banquise`, `espace`, `slime`, `japon`). Chaque dossier contient
+- `media/js/themes/` : un dossier par thème (`usine`, `banquise`, `espace`, `slime`, `japon`, `vaisseau`). Chaque dossier contient
   `theme.js` (ambiance et pièces utilisées), le personnage, et ce que le thème remplace (tour, tapis, décor, sol).
   `themes/index.js` liste les thèmes et décrit ce qu'un thème peut fournir ; seul le thème choisi est chargé.
