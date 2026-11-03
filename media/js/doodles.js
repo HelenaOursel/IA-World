@@ -128,11 +128,10 @@ let lastKind = '';
 export function makeDoodle(cx, cy, size, color, set = {}) {
   const shapes = set.shapes ?? SHAPES, words = set.words ?? WORDS, chalk = set.chalk ?? CHALK;
   const kinds = [...Object.keys(shapes), 'mot'];
-  let kind;
   // Tirage pondéré (`set.weights`, 1 par défaut), sans refaire deux fois de suite le même dessin
   const weight = (k) => (k === lastKind ? 0 : set.weights?.[k] ?? 1);
   let r = Math.random() * kinds.reduce((sum, k) => sum + weight(k), 0);
-  kind = kinds.find((k) => (r -= weight(k)) < 0) ?? kinds[0];
+  const kind = kinds.find((k) => (r -= weight(k)) < 0) ?? kinds[0];
   lastKind = kind;
 
   const d = {

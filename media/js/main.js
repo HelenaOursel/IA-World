@@ -7,12 +7,16 @@ import { UnrealBloomPass } from '../vendor/addons/postprocessing/UnrealBloomPass
 import { RoomEnvironment } from '../vendor/addons/environments/RoomEnvironment.js';
 import { Character } from './character.js';
 import { Demo } from './demo.js';
-import { eraseDoodle, makeDoodle } from './doodles.js';
+import { createBoard } from './board.js';
+import { CameraRig } from './camera-rig.js';
 import { Effects } from './effects.js';
 import { trimShadows } from './geometry.js';
-import { Hud, KIND_ICONS, plainText } from './hud.js';
+import { Hud, KIND_ICONS, pickLine, plainText } from './hud.js';
+import { createInput } from './input.js';
+import { minDuration, pushCapped } from './queue.js';
+import { createStationScreens } from './station-screens.js';
 import { THEME_LIST, loadTheme } from './themes/index.js';
-import { buildWorld, docRows, randomCodeRow } from './world.js';
+import { buildWorld } from './world.js';
 
 const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
 // Thème fourni par l'extension (data-theme), ou par ?theme= hors de VS Code.
@@ -71,7 +75,6 @@ composer.addPass(new OutputPass());
 
 const chars = new Map();
 const queues = new Map();
-const stationTimers = { write: 0, bash: 0, web: 0, search: 0, read: 0 };
 let colorIndex = 0;
 let mainCount = 0;
 let followId = null;
@@ -85,8 +88,8 @@ const hud = new Hud(app, {
   theme: theme.id,
   toggleDemo: () => (demo.running ? stopDemo() : startDemo()),
   toggleRotate: () => {
-    cam.autoRotate = !cam.autoRotate;
-    hud.setRotate(cam.autoRotate);
+    rig.autoRotate = !rig.autoRotate;
+    hud.setRotate(rig.autoRotate);
   },
   resetCamera: () => resetCamera(),
   follow: (id) => setFollow(followId === id ? null : id),
@@ -96,18 +99,16 @@ const hud = new Hud(app, {
   animationTarget: () => animationTarget()?.name ?? '',
   playAnimation: (i) => playAnimation(i),
   gift: theme.gift,
-  giftHover: (x, y) => giftHover(x, y),
-  dropGift: (x, y) => dropGift(x, y),
+  giftHover: (x, y) => input.giftHover(x, y),
+  dropGift: (x, y) => input.dropGift(x, y),
 });
 
 // ----------------------------------------------------------------- caméra
 
-const CAM_HOME = { theta: 0.42, phi: 0.98, radius: 22 };
-const cam = { ...CAM_HOME, target: new THREE.Vector3(0, 0.6, 0), autoRotate: false };
-const camGoal = { ...CAM_HOME };
+const rig = new CameraRig(camera);
 
 function resetCamera() {
-  Object.assign(camGoal, CAM_HOME);
+  rig.reset();
   setFollow(null);
 }
 
@@ -126,216 +127,24 @@ function requestTheme(id) {
 function setFollow(id) {
   followId = id;
   hud.setFollowed(id);
-  if (id) camGoal.radius = Math.min(camGoal.radius, 11);
+  if (id) rig.closeIn();
 }
 
-// Glisser (clic gauche) : tourner la caméra. Clic court sur un robot : le suivre.
-// Maintenir le clic droit et frotter un robot : le caresser.
-let drag = null;
-let hovered = null;
-let rub = 0;
-renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0 && e.button !== 2) return;
-  drag = { x: e.clientX, y: e.clientY, moved: 0, pet: e.button === 2, robot: robotAt(e.clientX, e.clientY) };
-  renderer.domElement.setPointerCapture(e.pointerId);
-  if (drag.pet) setHovered(drag.robot);
-});
-renderer.domElement.addEventListener('pointermove', (e) => {
-  if (!drag) return;
-  if (!drag.pet) {
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    drag.moved += Math.abs(dx) + Math.abs(dy);
-    drag.x = e.clientX;
-    drag.y = e.clientY;
-    camGoal.theta -= dx * 0.006;
-    camGoal.phi = THREE.MathUtils.clamp(camGoal.phi - dy * 0.005, 0.35, 1.38);
-    return;
-  }
-  const ch = robotAt(e.clientX, e.clientY);
-  setHovered(ch);
-  if (!ch) return;
-  rub += Math.abs(e.movementX) + Math.abs(e.movementY);
-  if (rub > 45) {
-    rub = 0;
-    petRobot(ch);
-  }
-});
-renderer.domElement.addEventListener('pointerup', (e) => {
-  if (drag && !drag.pet && e.button === 0 && drag.moved < 5) {
-    // Clic sur une carpe koï (thème Japon) : elle saute en faisant un looping.
-    const fish = !drag.robot && fishAt(e.clientX, e.clientY);
-    if (fish) world.jumpFish(fish);
-    else setFollow(drag.robot ? drag.robot.id : null);
-  }
-  drag = null;
-  setHovered(null);
-});
-renderer.domElement.addEventListener('pointerleave', () => {
-  if (!drag) setHovered(null);
-});
+const input = createInput({ renderer, camera, rig, chars, world, effects, hud, theme, follow: (ch) => setFollow(ch ? ch.id : null) });
 
-function setHovered(ch) {
-  if (hovered === ch) return;
-  hovered = ch;
-  rub = 0;
-  renderer.domElement.classList.toggle('pet', !!ch);
-}
-renderer.domElement.addEventListener(
-  'wheel',
-  (e) => {
-    e.preventDefault();
-    camGoal.radius = THREE.MathUtils.clamp(camGoal.radius * Math.exp(e.deltaY * 0.001), 5, 45);
-  },
-  { passive: false },
-);
+// ---------------------------------------------------------- postes et tableau
 
-const raycaster = new THREE.Raycaster();
-/** Robot sous un point de l'écran, ou null. */
-function robotAt(x, y) {
-  const r = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
-  raycaster.setFromCamera(ndc, camera);
-  const roots = [...chars.values()].filter((c) => !c.leaving).map((c) => c.root);
-  for (const h of raycaster.intersectObjects(roots, true)) {
-    for (let o = h.object; o; o = o.parent) {
-      if (o.userData.charId) return chars.get(o.userData.charId) ?? null;
-    }
-  }
-  return null;
-}
-
-/** Carpe koï sous un point de l'écran, ou null. */
-function fishAt(x, y) {
-  if (!world.kois.length) return null;
-  const r = renderer.domElement.getBoundingClientRect();
-  const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
-  raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObjects(world.kois, true)[0];
-  return hit ? world.kois.find((k) => k === hit.object.parent) ?? null : null;
-}
-
-// ------------------------------------------------------------ interactions
-
-const PET_LINES = ['Hihi !', 'Ça chatouille !', 'Bzzz <3', 'Encore !', 'Ronron…', 'Trop doux !'];
-const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
-
-function petRobot(ch) {
-  ch.react('pet', 0.8);
-  const now = performance.now();
-  if (now - (ch.lastHeart ?? 0) > 200) {
-    ch.lastHeart = now;
-    effects.heart(ch.topPosition(new THREE.Vector3()).add(new THREE.Vector3(0, -0.35, 0)));
-  }
-  if (now - (ch.lastPetTalk ?? 0) > 3500) {
-    ch.lastPetTalk = now;
-    hud.say(ch.id, pickLine(PET_LINES), 'speech', KIND_ICONS.love, 2.2, false);
-  }
-}
-
-/** Le personnage sous le cadeau tend les bras pour l'attraper. */
-function giftHover(x, y) {
-  const ch = robotAt(x, y);
-  if (ch && ch.reaction?.type !== 'love') ch.react('catch', 0.35);
-}
-
-function dropGift(x, y) {
-  const ch = robotAt(x, y);
-  if (!ch) return false;
-  const target = () => ch.root.localToWorld(new THREE.Vector3(0, ch.bodyY, ch.size * 0.3));
-  ch.react('catch', 1.3);
-  const gift = theme.gift;
-  effects.gift(gift, target().lerp(camera.position, 0.22), target, null, () => {
-    ch.react('love', 2.4);
-    effects.heart(ch.topPosition(new THREE.Vector3()), 6);
-    hud.say(ch.id, pickLine(gift.lines), 'speech', KIND_ICONS.love, 3, false);
-    hud.addLog(KIND_ICONS.love, 'Toi', '#7df9ff', `donne ${gift.article} à ${ch.name}`, ch.id);
-  });
-  return true;
-}
-
-// ------------------------------------------------------- bêtises au tableau
-
-// Un robot qui s'ennuie à la borne va parfois gribouiller sur le tableau de planification.
-const DOODLE_START_LINES = ['Hihi…', 'Chut !', 'Personne regarde ?', 'Juste un petit dessin…', 'Le tableau est libre !'];
-const DOODLE_DONE_LINES = ['Joli, non ?', 'Chef-d’oeuvre !', 'Trop mignon !', 'Je signe ?', 'Bip boup, fini !'];
-const BOARD_W = 2.75; // largeur de l'écran du tableau (m), pour 640 px de canvas
-
-function canDoodle() {
-  const doodlers = [...chars.values()].filter((c) => c.doodle).length;
-  return !st.plan.busy && doodlers < 2;
-}
-
-function startDoodle(ch) {
-  const plan = st.plan;
-  // Une place devant le tableau, loin des autres dessinateurs et des dessins encore visibles.
-  const taken = [
-    ...[...chars.values()].filter((c) => c.doodle).map((c) => c.doodle.x),
-    ...plan.doodles.map((d) => (d.cx / 640 - 0.5) * BOARD_W),
-  ];
-  let x = 0, best = -1;
-  for (let i = 0; i < 8; i++) {
-    const cand = (Math.random() * 2 - 1) * 1.0;
-    const dist = Math.min(9, ...taken.map((v) => Math.abs(v - cand)));
-    if (dist > best) {
-      best = dist;
-      x = cand;
-    }
-  }
-  if (ch.stationKey) st[ch.stationKey].release(ch.id);
-  ch.stationKey = null;
-  ch.wandering = false;
-  ch.doodle = { x, d: null, done: 0 };
-  ch.goTo({ pos: plan.group.localToWorld(new THREE.Vector3(x, 0, 0.5)), face: plan.group.rotation.y + Math.PI }, 'idle');
-  hud.setActivityText(ch.id, '~ Dessine au tableau');
-}
-
-function updateDoodler(ch, dt) {
-  const job = ch.doodle;
-  // Du vrai travail arrive : il file, son dessin reste inachevé.
-  if (!ch.idle || ch.leaving) {
-    if (job.d) job.d.drawing = false;
-    ch.doodle = null;
-    ch.react('surprise', 0.7);
-    return;
-  }
-  if (ch.moving) return;
-
-  const plan = st.plan;
-  if (!job.d) {
-    const alive = plan.doodles.filter((d) => d.life - d.age > d.fade);
-    if (alive.length > 5) eraseDoodle(alive[0], 1.5);
-    job.d = makeDoodle((job.x / BOARD_W + 0.5) * 640, 255 + Math.random() * 60, 80 + Math.random() * 25, ch.color, theme.doodles);
-    plan.doodles.push(job.d);
-    ch.setAction('doodle');
-    if (Math.random() < 0.5) hud.say(ch.id, pickLine(theme.doodles?.startLines ?? DOODLE_START_LINES), 'speech', '', 2.5, false);
-    return;
-  }
-
-  const d = job.d;
-  if (d.drawing) {
-    d.progress = Math.min(1, d.progress + dt / d.duration);
-    plan.doodleDirty = true;
-    if (d.progress >= 1) {
-      d.drawing = false;
-      ch.setAction('idle');
-      ch.react('jump', 1);
-      if (Math.random() < 0.6) hud.say(ch.id, pickLine(theme.doodles?.doneLines ?? DOODLE_DONE_LINES), 'speech', '', 2.5, false);
-    }
-    return;
-  }
-  // Dessin effacé avant d'être fini : la maîtresse est passée.
-  if (ch.action === 'doodle') {
-    ch.setAction('idle');
-    ch.react('surprise', 0.7);
-  }
-  job.done += dt;
-  if (job.done > 2) {
-    ch.doodle = null;
+const screens = createStationScreens({ stations: st, chars, effects });
+const board = createBoard({
+  chars,
+  stations: st,
+  hud,
+  theme,
+  goToSleep: (ch) => {
     moveTo(ch, 'dock', 'sleep');
     hud.setActivityText(ch.id, SLEEP_TEXT);
-  }
-}
+  },
+});
 
 function resize() {
   const w = app.clientWidth, h = app.clientHeight;
@@ -476,11 +285,6 @@ function shorten(s, n) {
 
 // --------------------------------------------------------------- activités
 
-function afterVerb(label, re) {
-  const m = re.exec(label);
-  return m ? m[1] : '';
-}
-
 function applyActivity(ch, ev, instant = false) {
   ch.lastEventAt = performance.now();
   ch.idle = false;
@@ -494,7 +298,7 @@ function applyActivity(ch, ev, instant = false) {
       ch.setPosition(ch.path[ch.path.length - 1]);
       ch.path = [];
     }
-    stationEffect(key, ev);
+    screens.onActivity(key, ev);
     ch.pendingThrow = key === 'trash' ? { kind: trashKind(ev.label), real: true } : null;
     hud.say(ch.id, ev.label, 'action', icon, 7);
   } else if (ev.kind === 'think') {
@@ -517,35 +321,6 @@ function logEvent(ch, icon, text, kind) {
   if (key === lastLog) return;
   lastLog = key;
   hud.addLog(icon, ch.name, ch.color, text, ch.id);
-}
-
-function stationEffect(key, ev) {
-  if (key === 'write') {
-    st.write.code.file = afterVerb(ev.label, /(?:J['’]écris|Je modifie)\s+(.+)$/) || ev.label;
-    st.write.code.rows = st.write.code.rows.slice(-3);
-    st.write.screen.redraw();
-    stationTimers.write = 4;
-  } else if (key === 'read') {
-    st.read.doc = { file: afterVerb(ev.label, /Je lis\s+(.+)$/) || ev.label, rows: docRows(), cursor: 0 };
-    st.read.screen.redraw();
-    stationTimers.read = 4;
-  } else if (key === 'bash') {
-    const lines = st.bash.lines;
-    if (ev.detail) lines.push({ t: '# ' + ev.detail, c: '#5f7a72' });
-    lines.push({ t: ev.label, c: '#39ff9f' });
-    st.bash.pendingOk = 1.6;
-    stationTimers.bash = 3;
-    st.bash.screen.redraw();
-  } else if (key === 'web') {
-    st.web.net.host = afterVerb(ev.label, /(?:Je consulte|web :)\s+(.+)$/) || ev.label;
-    stationTimers.web = 4;
-  } else if (key === 'search') {
-    st.search.query = ev.label.replace(/^Je (?:cherche|fouille)\s*/, '');
-    st.search.blips = [];
-    stationTimers.search = 4;
-  } else if (key === 'agent') {
-    st.agent.power = Math.max(st.agent.power, 0.7);
-  }
 }
 
 // ------------------------------------------------------------- corbeille
@@ -645,10 +420,7 @@ function animationTarget() {
 /** Interrompt ce que fait le personnage pour qu'il joue l'animation demandée. */
 function freeForAnimation(ch) {
   if (ch.themeAct) endThemeAction(ch);
-  if (ch.doodle) {
-    if (ch.doodle.d) ch.doodle.d.drawing = false;
-    ch.doodle = null;
-  }
+  board.stopDoodle(ch);
   ch.pendingThrow = null;
   ch.wandering = false;
   ch.idle = true;
@@ -668,8 +440,8 @@ const ANIMATIONS = [
   {
     label: 'Gribouillis au tableau',
     run(ch) {
-      if (!canDoodle()) return hud.notice('Le tableau est occupé.', 3);
-      startDoodle(ch);
+      if (!board.canDoodle()) return hud.notice('Le tableau est occupé.', 3);
+      board.startDoodle(ch);
     },
   },
   ...(theme.idleThrow !== false
@@ -723,7 +495,7 @@ function playAnimation(i) {
 function setTodos(todos) {
   st.plan.todos = todos || [];
   // Le plan revient au tableau : les gribouillis sont effacés.
-  for (const d of st.plan.doodles) eraseDoodle(d);
+  board.eraseAll();
   st.plan.screen.redraw();
 }
 
@@ -734,11 +506,7 @@ function onError(ch, text) {
   const p = ch.topPosition(new THREE.Vector3());
   effects.burst(p, { count: 14, colors: ['#ff4d6d', '#ff8fa3'], speed: 1.3, up: 1.2, life: 0.8, gravity: -2, size: 0.04 });
   effects.smoke(p.clone().setY(p.y - 0.4));
-  if (ch.stationKey === 'bash') {
-    st.bash.pendingOk = 0;
-    st.bash.lines.push({ t: 'x ' + text, c: '#ff4d6d' });
-    st.bash.screen.redraw();
-  }
+  if (ch.stationKey === 'bash') screens.onError(text);
   logEvent(ch, KIND_ICONS.error, text, 'error');
 }
 
@@ -779,17 +547,10 @@ function onPrompt(text, id) {
 
 // ------------------------------------------------------- file d'attente
 
-// Les événements arrivent souvent par paquets : on les étale un peu pour que l'animation reste lisible.
+// Les événements sont étalés pour rester lisibles (rythme et plafond : queue.js).
 function enqueue(agentId, ev) {
-  queues.get(agentId)?.items.push(ev);
-}
-
-function minDuration(ev, backlog) {
-  if (backlog > 6) return 0.25;
-  if (backlog > 3) return 0.6;
-  if (ev.type === 'prompt') return 3.6;
-  if (ev.type === 'activity') return ev.kind === 'think' ? 0.8 : ev.kind === 'talk' ? 2 : 1.3;
-  return 0.8;
+  const q = queues.get(agentId);
+  if (q) pushCapped(q.items, ev);
 }
 
 function processQueues(now) {
@@ -947,82 +708,7 @@ window.addEventListener('message', (e) => handleMessage(e.data));
 // ------------------------------------------------------------------ boucle
 
 let last = performance.now();
-let codeTimer = 0;
-let docTimer = 0;
-let ringTimer = 0;
-let doodleTimer = 0;
 const tmp = new THREE.Vector3();
-
-function updateStations(dt) {
-  for (const k of Object.keys(stationTimers)) stationTimers[k] = Math.max(0, stationTimers[k] - dt);
-  for (const [key, s] of Object.entries(st)) {
-    if (key === 'dock') continue;
-    s.busy = [...chars.values()].some((c) => c.stationKey === key && !c.moving && !c.leaving && !c.idle);
-  }
-
-  if (stationTimers.write > 0 && st.write.busy) {
-    codeTimer += dt;
-    if (codeTimer > 0.2) {
-      codeTimer = 0;
-      const code = st.write.code;
-      code.rows.push(randomCodeRow());
-      if (code.rows.length > 10) {
-        code.rows.shift();
-        code.scroll++;
-      }
-      st.write.screen.redraw();
-    }
-  }
-  if (stationTimers.read > 0 && st.read.busy) {
-    docTimer += dt;
-    if (docTimer > 0.45) {
-      docTimer = 0;
-      const doc = st.read.doc;
-      doc.cursor = (doc.cursor + 1) % doc.rows.length;
-      st.read.screen.redraw();
-    }
-  }
-
-  // Étincelles sur les claviers occupés
-  for (const key of ['write', 'bash', 'web', 'read', 'search']) {
-    const s = st[key];
-    if (s.busy && Math.random() < dt * 5) {
-      effects.burst(s.keys.localToWorld(tmp.set(0, 0, 0)), { count: 2, colors: [s.color, '#ffffff'], speed: 0.4, up: 0.8, life: 0.5, gravity: -1.5, size: 0.025 });
-    }
-  }
-
-  const bash = st.bash;
-  if (bash.pendingOk > 0) {
-    bash.pendingOk -= dt;
-    if (bash.pendingOk <= 0) {
-      bash.lines.push({ t: 'ok terminé', c: '#a7f3d0' });
-      if (bash.lines.length > 40) bash.lines.splice(0, bash.lines.length - 40);
-      bash.screen.redraw();
-    }
-  }
-
-  ringTimer += dt;
-  if (stationTimers.web > 0 && st.web.busy && ringTimer > 0.55) {
-    ringTimer = 0;
-    effects.ring(st.web.group.localToWorld(st.web.topLocal.clone()), { color: '#f15bb5', from: 0.05, to: 1.2, life: 1.1 });
-  }
-
-  // Gribouillis du tableau : ils vieillissent puis s'effacent, et l'écran suit.
-  const plan = st.plan;
-  if (plan.doodles.length) {
-    doodleTimer += dt;
-    for (const d of plan.doodles) {
-      d.age += dt;
-      if (d.life - d.age < d.fade) plan.doodleDirty = true;
-    }
-    plan.doodles = plan.doodles.filter((d) => d.age < d.life);
-    if (plan.doodleDirty && doodleTimer > 0.06) {
-      doodleTimer = 0;
-      plan.doodleDirty = false;
-      plan.screen.redraw();
-    }
-  }
-}
 
 function updateCharacters(now, dt, t) {
   for (const ch of [...chars.values()]) {
@@ -1059,12 +745,12 @@ function updateCharacters(now, dt, t) {
 
     // Petites patrouilles quand rien ne se passe, un panier de papier dans la corbeille, ou une bêtise au tableau.
     if (ch.themeAct) updateThemeAction(ch, dt);
-    else if (ch.doodle) updateDoodler(ch, dt);
+    else if (ch.doodle) board.updateDoodler(ch, dt);
     else if (ch.idle && !ch.moving) {
       if (!ch.wandering && theme.actions?.idle?.length && Math.random() < dt * 0.03) {
         startThemeAction(ch);
-      } else if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && canDoodle()) {
-        startDoodle(ch);
+      } else if (!ch.wandering && ch.stationKey === 'dock' && Math.random() < dt * 0.025 && board.canDoodle()) {
+        board.startDoodle(ch);
       } else if (!ch.wandering && Math.random() < dt * 0.03) {
         if (theme.idleThrow !== false && Math.random() < 0.4) {
           moveTo(ch, 'trash', 'aim');
@@ -1081,23 +767,6 @@ function updateCharacters(now, dt, t) {
   }
 }
 
-function updateCamera(dt) {
-  if (cam.autoRotate && !drag) camGoal.theta += dt * 0.06;
-  const k = 1 - Math.exp(-dt * 6);
-  cam.theta += (camGoal.theta - cam.theta) * k;
-  cam.phi += (camGoal.phi - cam.phi) * k;
-  cam.radius += (camGoal.radius - cam.radius) * k;
-  const followed = followId && chars.get(followId);
-  const goal = followed ? tmp.copy(followed.root.position).setY(0.7) : tmp.set(0, 0.6, 0);
-  cam.target.lerp(goal, 1 - Math.exp(-dt * 4));
-  camera.position.set(
-    cam.target.x + cam.radius * Math.sin(cam.phi) * Math.sin(cam.theta),
-    cam.target.y + cam.radius * Math.cos(cam.phi),
-    cam.target.z + cam.radius * Math.sin(cam.phi) * Math.cos(cam.theta),
-  );
-  camera.lookAt(cam.target);
-}
-
 let skipFrame = false;
 function frame() {
   // Panneau sans le focus (on code dans l'éditeur) : 30 images/s au lieu de 60, pour économiser la batterie.
@@ -1112,10 +781,11 @@ function frame() {
 
   processQueues(now);
   world.update(t, dt);
-  updateStations(dt);
+  screens.update(dt);
+  board.update(dt);
   updateCharacters(now, dt, t);
   effects.update(dt);
-  updateCamera(dt);
+  rig.update(dt, followId ? chars.get(followId) : null, input.dragging());
   composer.render();
   hud.update(camera, app.clientWidth, app.clientHeight);
 }

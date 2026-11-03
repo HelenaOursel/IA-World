@@ -169,7 +169,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('iaworld.open', () => WorldPanel.show(context)),
     vscode.commands.registerCommand('iaworld.demo', () => WorldPanel.show(context).post({ type: 'demo' })),
     vscode.commands.registerCommand('iaworld.pickSession', async () => {
-      const sessions = watcher.listSessions();
+      const sessions = await watcher.listSessions();
       const items: (vscode.QuickPickItem & { file?: string })[] = [
         { label: '$(sync) Automatique', description: 'Suivre toutes les sessions actives' },
         ...sessions.map((s) => ({
@@ -180,10 +180,11 @@ export function activate(context: vscode.ExtensionContext): void {
         })),
       ];
       const pick = await vscode.window.showQuickPick(items, { placeHolder: 'Quelle session Claude afficher ?', matchOnDescription: true });
-      if (pick) watcher.pin(pick.file);
+      if (pick) await watcher.pin(pick.file);
     }),
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('iaworld')) watcher.configure(readOptions());
+      // Seuls ces réglages changent les sessions suivies (le thème, lui, recharge seulement la page)
+      if (['claudeDir', 'followAllProjects'].some((k) => e.affectsConfiguration(`iaworld.${k}`))) watcher.configure(readOptions());
       if (e.affectsConfiguration('iaworld.theme')) {
         // Le réglage fait foi dès qu'il est enregistré (ou modifié à la main).
         chosenTheme = undefined;

@@ -9,6 +9,8 @@
     "type": "git",
     "url": "https://github.com/HelenaOursel/IA-World.git"
   },
+  "bugs": "https://github.com/HelenaOursel/IA-World/issues",
+  "homepage": "https://github.com/HelenaOursel/IA-World#readme",
   "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.85.0"
@@ -68,7 +70,14 @@
         "iaworld.theme": {
           "type": "string",
           "default": "usine",
-          "enum": ["usine", "banquise", "espace", "slime", "japon", "vaisseau"],
+          "enum": [
+            "usine",
+            "banquise",
+            "espace",
+            "slime",
+            "japon",
+            "vaisseau"
+          ],
           "enumDescriptions": [
             "Usine futuriste et robots cubiques",
             "Banquise enneigée et pingouins",
@@ -86,13 +95,20 @@
     "vendor": "node scripts/vendor.js",
     "compile": "npm run vendor && tsc -p .",
     "watch": "tsc -watch -p .",
-    "package": "npm run compile && vsce package --no-dependencies"
+    "lint": "eslint .",
+    "test": "tsc -p . && node --test \"out/test/**/*.test.js\"",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.2.1",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "three": "0.170.0",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.72.1"
   }
 }

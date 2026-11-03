@@ -75,6 +75,9 @@ export function plainText(s) {
   return out === s ? s : out.replace(/ {2,}/g, ' ').trim();
 }
 
+/** Une réplique au hasard. */
+export const pickLine = (lines) => lines[Math.floor(Math.random() * lines.length)];
+
 function el(tag, cls, parent, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;

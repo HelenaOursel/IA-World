@@ -1,0 +1,6 @@
+# Fins de ligne LF partout, quel que soit le système (le dépôt est déjà en LF ;
+# sans ce fichier, core.autocrlf réécrit la copie de travail en CRLF sous Windows).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.vsix binary

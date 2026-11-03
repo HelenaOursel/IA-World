@@ -2,11 +2,13 @@
 import * as path from 'path';
 import { ActivityKind, Todo, WorldEvent } from './events';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
+// Au-delà, le texte est coupé avant nettoyage : les expressions régulières sur les balises deviennent
+// quadratiques sur un très long texte plein de « < » non refermés (plusieurs secondes de blocage).
+const CLEAN_INPUT_MAX = 20_000;
 
 /** Nettoie un texte pour l'afficher dans une bulle. */
 export function cleanText(s: string, max: number, dropTagContent = true): string {
-  let t = s;
+  let t = s.length > CLEAN_INPUT_MAX ? s.slice(0, CLEAN_INPUT_MAX) : s;
   if (dropTagContent) {
     t = t.replace(/<([a-zA-Z_-]+)[^>]*>[\s\S]*?<\/\1>/g, ' ');
   }
@@ -26,6 +28,13 @@ function base(p: unknown): string {
 
 function str(v: unknown, max = 60): string {
   return typeof v === 'string' ? cleanText(v, max, false) : '';
+}
+
+/** Texte technique (motif, commande) : seulement les espaces resserrés et la longueur bornée, car * | ` y ont un sens. */
+function code(v: unknown, max = 60): string {
+  if (typeof v !== 'string') return '';
+  const t = v.replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1).trimEnd() + '…' : t;
 }
 
 // Commandes de suppression : rm, del, Remove-Item, git rm…
@@ -77,10 +86,10 @@ export function describeTool(name: string, input: any): ToolDescription {
     case 'NotebookRead':
       return { kind: 'read', label: `Je lis ${base(i.file_path ?? i.notebook_path) || 'un fichier'}` };
     case 'Grep':
-      return { kind: 'search', label: `Je cherche « ${str(i.pattern, 40)} »` };
+      return { kind: 'search', label: `Je cherche « ${code(i.pattern, 40)} »` };
     case 'Glob':
     case 'LS':
-      return { kind: 'search', label: `Je fouille ${str(i.pattern ?? i.path, 40) || 'les dossiers'}` };
+      return { kind: 'search', label: `Je fouille ${code(i.pattern ?? i.path, 40) || 'les dossiers'}` };
     case 'ToolSearch':
       return { kind: 'search', label: 'Je cherche le bon outil' };
     case 'Write':
@@ -97,12 +106,12 @@ export function describeTool(name: string, input: any): ToolDescription {
       const cmd = typeof i.command === 'string' ? i.command.split('\n')[0] : '';
       const target = deletedTarget(cmd);
       if (target !== undefined) return { kind: 'trash', label: `Je jette ${target || 'des fichiers'}`, detail: str(i.description, 80) };
-      return { kind: 'bash', label: `$ ${cleanText(cmd, 56, false)}`, detail: str(i.description, 80) };
+      return { kind: 'bash', label: `$ ${code(cmd, 56)}`, detail: str(i.description, 80) };
     }
     case 'WebSearch':
       return { kind: 'web', label: `Je cherche sur le web : ${str(i.query, 40)}` };
     case 'WebFetch': {
-      let host = '';
+      let host: string;
       try {
         host = new URL(String(i.url)).hostname;
       } catch {

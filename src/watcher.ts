@@ -8,10 +8,10 @@ import * as path from 'path';
 import { AgentInfo, SessionInfo, Snapshot, Todo, WorldEvent } from './events';
 import { parseEntry } from './transcript';
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 const TICK_MS = 600;
 const DISCOVER_EVERY = 4;
+// Au repos (aucune session en direct), les nouvelles sessions sont cherchées trois fois moins souvent.
+const IDLE_DISCOVER_EVERY = 12;
 const LIVE_WINDOW_MS = 90_000;
 const ACTIVE_SESSION_MS = 15 * 60_000;
 const STALE_AGENT_MS = 10 * 60_000;
@@ -34,33 +34,27 @@ export interface SessionListing {
 }
 
 /** Lit les lignes ajoutées à un fichier depuis la dernière lecture. */
-class LineTail {
+export class LineTail {
   private partial = Buffer.alloc(0);
 
   constructor(readonly file: string, private offset: number) {}
 
-  read(): string[] {
-    let size: number;
-    try {
-      size = fs.statSync(this.file).size;
-    } catch {
-      return [];
-    }
+  async read(): Promise<string[]> {
+    const size = (await statOf(this.file))?.size;
+    if (size === undefined) return [];
     if (size < this.offset) {
       this.offset = 0;
       this.partial = Buffer.alloc(0);
     }
     if (size === this.offset) return [];
 
-    const len = Math.min(size - this.offset, MAX_READ_BYTES);
-    const buf = Buffer.alloc(len);
-    const fd = fs.openSync(this.file, 'r');
+    let buf: Buffer;
     try {
-      fs.readSync(fd, buf, 0, len, this.offset);
-    } finally {
-      fs.closeSync(fd);
+      buf = await readRange(this.file, this.offset, Math.min(size - this.offset, MAX_READ_BYTES));
+    } catch {
+      return [];
     }
-    this.offset += len;
+    this.offset += buf.length;
 
     const data = Buffer.concat([this.partial, buf]);
     const lines: string[] = [];
@@ -89,35 +83,52 @@ function safeJson(line: string): any {
   }
 }
 
-function readSafe(file: string): string {
+// Toutes les lectures sont asynchrones : l'extension host n'est jamais bloqué, même avec des centaines de sessions.
+
+/** Informations du fichier, ou undefined s'il n'existe pas (ou plus). */
+async function statOf(file: string): Promise<fs.Stats | undefined> {
   try {
-    return fs.readFileSync(file, 'utf8');
+    return await fs.promises.stat(file);
+  } catch {
+    return undefined;
+  }
+}
+
+async function readSafe(file: string): Promise<string> {
+  try {
+    return await fs.promises.readFile(file, 'utf8');
   } catch {
     return '';
   }
 }
 
-function mtimeOf(file: string): number {
+async function mtimeOf(file: string): Promise<number> {
+  return (await statOf(file))?.mtimeMs ?? 0;
+}
+
+/** Taille du fichier, ou 0 s'il a disparu entre-temps. */
+async function sizeOf(file: string): Promise<number> {
+  return (await statOf(file))?.size ?? 0;
+}
+
+/** Lit `length` octets à partir de `start` (moins si le fichier est plus court). */
+async function readRange(file: string, start: number, length: number): Promise<Buffer> {
+  const handle = await fs.promises.open(file, 'r');
   try {
-    return fs.statSync(file).mtimeMs;
-  } catch {
-    return 0;
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await handle.read(buf, 0, length, start);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
   }
 }
 
 /** Lit le début d'un fichier, ligne par ligne (la dernière ligne partielle est ignorée). */
-function readHeadLines(file: string, bytes: number): string[] {
+async function readHeadLines(file: string, bytes: number): Promise<string[]> {
   try {
-    const buf = Buffer.alloc(bytes);
-    const fd = fs.openSync(file, 'r');
-    let n = 0;
-    try {
-      n = fs.readSync(fd, buf, 0, bytes, 0);
-    } finally {
-      fs.closeSync(fd);
-    }
-    const lines = buf.toString('utf8', 0, n).split('\n');
-    if (n === bytes) lines.pop();
+    const buf = await readRange(file, 0, bytes);
+    const lines = buf.toString('utf8').split('\n');
+    if (buf.length === bytes) lines.pop();
     return lines.filter(Boolean);
   } catch {
     return [];
@@ -126,11 +137,11 @@ function readHeadLines(file: string, bytes: number): string[] {
 
 const startCache = new Map<string, number>();
 /** Début d'une session : horodatage de sa première entrée datée, sinon date de création du fichier. */
-function startOf(file: string): number {
+async function startOf(file: string): Promise<number> {
   const cached = startCache.get(file);
   if (cached) return cached;
   let start = 0;
-  for (const line of readHeadLines(file, 64 * 1024).slice(0, 40)) {
+  for (const line of (await readHeadLines(file, 64 * 1024)).slice(0, 40)) {
     const ts = Date.parse(safeJson(line)?.timestamp ?? '');
     if (ts) {
       start = ts;
@@ -138,13 +149,9 @@ function startOf(file: string): number {
     }
   }
   if (!start) {
-    try {
-      start = fs.statSync(file).birthtimeMs;
-    } catch {
-      start = 0;
-    }
+    const st = await statOf(file);
+    start = st?.birthtimeMs || st?.mtimeMs || 0;
   }
-  start ||= mtimeOf(file);
   startCache.set(file, start);
   return start;
 }
@@ -153,16 +160,22 @@ function startOf(file: string): number {
  * Sessions remplacées (ancienne -> nouvelle) : après un /clear, l'ancien fichier se tait et un nouveau commence
  * dans le même projet. Deux sessions vraiment parallèles continuent d'écrire toutes les deux et ne sont pas concernées.
  */
-function replacements(files: string[]): Map<string, string> {
+async function replacements(files: string[]): Promise<Map<string, string>> {
+  const starts = new Map<string, number>();
+  const ends = new Map<string, number>();
+  for (const f of files) {
+    starts.set(f, await startOf(f));
+    ends.set(f, await mtimeOf(f));
+  }
   const out = new Map<string, string>();
   for (const a of files) {
-    const end = mtimeOf(a);
+    const end = ends.get(a)!;
     let next: string | undefined;
     let nextStart = Infinity;
     for (const b of files) {
       if (b === a || path.dirname(b) !== path.dirname(a)) continue;
-      const s = startOf(b);
-      if (s > startOf(a) && end <= s + REPLACE_SLACK_MS && s < nextStart) {
+      const s = starts.get(b)!;
+      if (s > starts.get(a)! && end <= s + REPLACE_SLACK_MS && s < nextStart) {
         next = b;
         nextStart = s;
       }
@@ -172,26 +185,20 @@ function replacements(files: string[]): Map<string, string> {
   return out;
 }
 
-function readDir(dir: string): fs.Dirent[] {
+async function readDir(dir: string): Promise<fs.Dirent[]> {
   try {
-    return fs.readdirSync(dir, { withFileTypes: true });
+    return await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
     return [];
   }
 }
 
 /** Lit la fin d'un fichier (les premières lignes partielles sont ignorées). */
-function readTailLines(file: string, bytes: number): string[] {
+async function readTailLines(file: string, bytes: number): Promise<string[]> {
   try {
-    const size = fs.statSync(file).size;
+    const size = await sizeOf(file);
     const start = Math.max(0, size - bytes);
-    const buf = Buffer.alloc(size - start);
-    const fd = fs.openSync(file, 'r');
-    try {
-      fs.readSync(fd, buf, 0, buf.length, start);
-    } finally {
-      fs.closeSync(fd);
-    }
+    const buf = await readRange(file, start, size - start);
     const lines = buf.toString('utf8').split('\n');
     if (start > 0) lines.shift();
     return lines.filter(Boolean);
@@ -205,8 +212,8 @@ export function encodeProjectDir(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
-export function titleOf(file: string): string {
-  const lines = readTailLines(file, 256 * 1024);
+export async function titleOf(file: string): Promise<string> {
+  const lines = await readTailLines(file, 256 * 1024);
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].includes('"ai-title"')) continue;
     const o = safeJson(lines[i]);
@@ -218,23 +225,33 @@ export function titleOf(file: string): string {
 /** Une session Claude suivie : son fil principal et ses sous-agents. */
 class TrackedSession {
   readonly info: SessionInfo;
-  private mainTail: LineTail;
+  private mainTail!: LineTail;
   private agents = new Map<string, TrackedAgent>();
   private pendingMeta = new Map<string, number>();
   todos: Todo[] = [];
   todosAt = 0;
   lastActivities = new Map<string, WorldEvent>();
-  lastActivityTime: number;
+  lastActivityTime = 0;
+
+  private constructor(file: string, private readonly emit: (ev: WorldEvent) => void, mainId?: string) {
+    const id = path.basename(file, '.jsonl');
+    this.info = { id, mainId: mainId ?? 'main:' + id.slice(0, 8), file, title: '', project: path.basename(path.dirname(file)) };
+  }
 
   /** `mainId` : celui de la session remplacée (après un /clear), pour garder le même personnage. */
-  constructor(file: string, private readonly emit: (ev: WorldEvent) => void, mainId?: string) {
-    this.lastActivityTime = mtimeOf(file);
-    const id = path.basename(file, '.jsonl');
-    let title = '';
-    let project = path.basename(path.dirname(file));
-    this.info = { id, mainId: mainId ?? 'main:' + id.slice(0, 8), file, title, project };
+  static async open(file: string, emit: (ev: WorldEvent) => void, mainId?: string): Promise<TrackedSession> {
+    const s = new TrackedSession(file, emit, mainId);
+    await s.bootstrap();
+    return s;
+  }
 
-    for (const line of readTailLines(file, BOOTSTRAP_BYTES)) {
+  /** Relit la fin du transcript (titre, projet, tâches, dernière activité), puis suit ce qui s'y ajoute. */
+  private async bootstrap(): Promise<void> {
+    const file = this.info.file;
+    this.lastActivityTime = await mtimeOf(file);
+    let title = '';
+    let project = this.info.project;
+    for (const line of await readTailLines(file, BOOTSTRAP_BYTES)) {
       const o = safeJson(line);
       if (!o) continue;
       if (o.type === 'ai-title' && o.aiTitle) title = String(o.aiTitle);
@@ -248,21 +265,14 @@ class TrackedSession {
     }
     this.info.title = title;
     this.info.project = project;
-
-    let size = 0;
-    try {
-      size = fs.statSync(file).size;
-    } catch {
-      /* fichier disparu */
-    }
-    this.mainTail = new LineTail(file, size);
-    this.scanSubagents(true);
+    this.mainTail = new LineTail(file, await sizeOf(file));
+    await this.scanSubagents(true);
   }
 
   /** Dernière activité de la session (fil principal ou sous-agents). */
-  activity(): number {
-    let t = mtimeOf(this.info.file);
-    for (const a of this.agents.values()) if (a.active) t = Math.max(t, mtimeOf(a.tail.file));
+  async activity(): Promise<number> {
+    let t = await mtimeOf(this.info.file);
+    for (const a of this.agents.values()) if (a.active) t = Math.max(t, await mtimeOf(a.tail.file));
     return t;
   }
 
@@ -270,11 +280,11 @@ class TrackedSession {
     return [...this.agents.values()].filter((a) => a.active).map((a) => a.info);
   }
 
-  tick(ticks: number): void {
-    this.readMain();
-    if (ticks % 2 === 0) this.scanSubagents(false);
-    this.readAgents();
-    if (ticks % 3 === 0) this.checkAgentsFinished();
+  async tick(ticks: number): Promise<void> {
+    await this.readMain();
+    if (ticks % 2 === 0) await this.scanSubagents(false);
+    await this.readAgents();
+    if (ticks % 3 === 0) await this.checkAgentsFinished();
   }
 
   private setTodos(todos: Todo[], at: number): void {
@@ -286,15 +296,15 @@ class TrackedSession {
     return path.join(this.info.file.replace(/\.jsonl$/, ''), 'subagents');
   }
 
-  private scanSubagents(initial: boolean): void {
+  private async scanSubagents(initial: boolean): Promise<void> {
     const dir = this.subagentDir();
-    for (const f of readDir(dir)) {
+    for (const f of await readDir(dir)) {
       const m = /^agent-(.+)\.jsonl$/.exec(f.name);
       if (!m || this.agents.has(m[1])) continue;
       const file = path.join(dir, f.name);
       const metaFile = path.join(dir, `agent-${m[1]}.meta.json`);
-      const meta = safeJson(readSafe(metaFile));
-      const recent = Date.now() - mtimeOf(file) < STALE_AGENT_MS;
+      const meta = safeJson(await readSafe(metaFile));
+      const recent = Date.now() - (await mtimeOf(file)) < STALE_AGENT_MS;
 
       if (initial && (!recent || meta?.finished)) {
         // Agent déjà terminé avant notre arrivée : on le mémorise sans l'afficher.
@@ -317,14 +327,14 @@ class TrackedSession {
         agentType: String(meta?.agentType || 'agent'),
         ownerId: this.info.mainId,
       };
-      const start = initial ? fs.statSync(file).size : 0;
+      const start = initial ? await sizeOf(file) : 0;
       this.agents.set(m[1], { info, tail: new LineTail(file, start), metaFile, active: true });
       if (!initial) this.emit({ type: 'spawn', agent: info });
     }
   }
 
-  private readMain(): void {
-    for (const line of this.mainTail.read()) {
+  private async readMain(): Promise<void> {
+    for (const line of await this.mainTail.read()) {
       const o = safeJson(line);
       if (!o) continue;
       if (o.type === 'ai-title' && o.aiTitle && this.info.title !== o.aiTitle) {
@@ -332,45 +342,45 @@ class TrackedSession {
         this.emit({ type: 'title', mainId: this.info.mainId, title: this.info.title });
       }
       if (o.isSidechain) continue;
-      this.handle(parseEntry(o, this.info.mainId, true));
+      await this.handle(parseEntry(o, this.info.mainId, true));
     }
   }
 
-  private readAgents(): void {
+  private async readAgents(): Promise<void> {
     for (const a of this.agents.values()) {
       if (!a.active) continue;
-      for (const line of a.tail.read()) {
+      for (const line of await a.tail.read()) {
         const o = safeJson(line);
-        if (o) this.handle(parseEntry(o, a.info.id, false));
+        if (o) await this.handle(parseEntry(o, a.info.id, false));
       }
     }
   }
 
-  private checkAgentsFinished(): void {
+  private async checkAgentsFinished(): Promise<void> {
     for (const a of this.agents.values()) {
       if (!a.active) continue;
-      const meta = safeJson(readSafe(a.metaFile));
-      const stale = Date.now() - mtimeOf(a.tail.file) > STALE_AGENT_MS;
-      if (meta?.finished || stale) this.despawn(a.info.id);
+      const meta = safeJson(await readSafe(a.metaFile));
+      const stale = Date.now() - (await mtimeOf(a.tail.file)) > STALE_AGENT_MS;
+      if (meta?.finished || stale) await this.despawn(a.info.id);
     }
   }
 
-  private despawn(id: string): void {
+  private async despawn(id: string): Promise<void> {
     const a = this.agents.get(id);
     if (!a || !a.active) return;
-    for (const line of a.tail.read()) {
+    for (const line of await a.tail.read()) {
       const o = safeJson(line);
-      if (o) this.handle(parseEntry(o, id, false));
+      if (o) await this.handle(parseEntry(o, id, false));
     }
     a.active = false;
     this.lastActivities.delete(id);
     this.emit({ type: 'despawn', id });
   }
 
-  private handle(events: WorldEvent[]): void {
+  private async handle(events: WorldEvent[]): Promise<void> {
     for (const ev of events) {
       if (ev.type === 'agentResult') {
-        this.despawn(ev.id);
+        await this.despawn(ev.id);
         continue;
       }
       if (ev.type === 'todos') this.setTodos(ev.todos, Date.now());
@@ -389,9 +399,18 @@ export class SessionWatcher extends EventEmitter {
   private pinned: string | undefined;
   private sessions = new Map<string, TrackedSession>();
   private live = false;
+  // Les tours s'enchaînent l'un après l'autre, jamais en même temps ; `busy` : un tour est en attente ou en cours.
+  private chain: Promise<void> = Promise.resolve();
+  private busy = false;
 
   constructor(private opts: WatcherOptions) {
     super();
+  }
+
+  /** Ajoute une tâche à la suite des précédentes. */
+  private enqueue(task: () => Promise<void>): Promise<void> {
+    this.chain = this.chain.then(task).catch((err) => console.error('[IA World]', err));
+    return this.chain;
   }
 
   configure(opts: WatcherOptions): void {
@@ -401,8 +420,21 @@ export class SessionWatcher extends EventEmitter {
 
   start(): void {
     if (this.timer) return;
-    this.tick();
-    this.timer = setInterval(() => this.tick(), TICK_MS);
+    void this.scheduleTick();
+    this.timer = setInterval(() => void this.scheduleTick(), TICK_MS);
+  }
+
+  /** Lance un tour, sauf si le précédent n'est pas fini (disque lent) : on saute plutôt que d'empiler. */
+  private scheduleTick(): Promise<void> {
+    if (this.busy) return this.chain;
+    this.busy = true;
+    return this.enqueue(async () => {
+      try {
+        await this.tick();
+      } finally {
+        this.busy = false;
+      }
+    });
   }
 
   stop(): void {
@@ -411,11 +443,13 @@ export class SessionWatcher extends EventEmitter {
   }
 
   /** Force le suivi d'une seule session (undefined = toutes les sessions actives). */
-  pin(file: string | undefined): void {
-    this.pinned = file;
-    this.sessions.clear();
-    this.ticks = 0;
-    this.discover(true);
+  pin(file: string | undefined): Promise<void> {
+    return this.enqueue(async () => {
+      this.pinned = file;
+      this.sessions.clear();
+      this.ticks = 0;
+      await this.discover(true);
+    });
   }
 
   get isLive(): boolean {
@@ -445,18 +479,18 @@ export class SessionWatcher extends EventEmitter {
     };
   }
 
-  listSessions(limit = 30): SessionListing[] {
-    const out: SessionListing[] = this.sessionFiles(true).map((s) => ({ ...s, title: '', project: path.basename(path.dirname(s.file)) }));
+  async listSessions(limit = 30): Promise<SessionListing[]> {
+    const out: SessionListing[] = (await this.sessionFiles(true)).map((s) => ({ ...s, title: '', project: path.basename(path.dirname(s.file)) }));
     out.sort((a, b) => b.mtime - a.mtime);
     const top = out.slice(0, limit);
-    for (const s of top) s.title = titleOf(s.file);
+    for (const s of top) s.title = await titleOf(s.file);
     return top;
   }
 
   // ---------------------------------------------------------------- interne
 
-  private candidateDirs(all = false): string[] {
-    const dirs = readDir(this.opts.projectsDir)
+  private async candidateDirs(all = false): Promise<string[]> {
+    const dirs = (await readDir(this.opts.projectsDir))
       .filter((d) => d.isDirectory())
       .map((d) => d.name);
     const wanted = this.opts.workspaceDirs.map((w) => encodeProjectDir(w).toLowerCase());
@@ -470,22 +504,22 @@ export class SessionWatcher extends EventEmitter {
     return picked.map((d) => path.join(this.opts.projectsDir, d));
   }
 
-  private sessionFiles(all = false): { file: string; mtime: number }[] {
+  private async sessionFiles(all = false): Promise<{ file: string; mtime: number }[]> {
     const out: { file: string; mtime: number }[] = [];
-    for (const dir of this.candidateDirs(all)) {
-      for (const f of readDir(dir)) {
+    for (const dir of await this.candidateDirs(all)) {
+      for (const f of await readDir(dir)) {
         if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
         const file = path.join(dir, f.name);
-        out.push({ file, mtime: mtimeOf(file) });
+        out.push({ file, mtime: await mtimeOf(file) });
       }
     }
     return out;
   }
 
-  private tick(): void {
+  private async tick(): Promise<void> {
     try {
-      if (this.ticks % DISCOVER_EVERY === 0) this.discover(false);
-      for (const s of this.sessions.values()) s.tick(this.ticks);
+      if (this.ticks % (this.live ? DISCOVER_EVERY : IDLE_DISCOVER_EVERY) === 0) await this.discover(false);
+      for (const s of this.sessions.values()) await s.tick(this.ticks);
       this.updateLive();
     } catch (err) {
       console.error('[IA World]', err);
@@ -494,23 +528,23 @@ export class SessionWatcher extends EventEmitter {
   }
 
   /** Ouvre les sessions actives et ferme celles qui sont inactives depuis longtemps. */
-  private discover(forceSnapshot: boolean): void {
+  private async discover(forceSnapshot: boolean): Promise<void> {
     const initial = forceSnapshot || this.ticks === 0;
     let wanted: string[];
     let replaced = new Map<string, string>();
     if (this.pinned) {
       wanted = [this.pinned];
     } else {
-      const files = this.sessionFiles().sort((a, b) => b.mtime - a.mtime);
+      const files = (await this.sessionFiles()).sort((a, b) => b.mtime - a.mtime);
       const now = Date.now();
       wanted = files.filter((f) => now - f.mtime < ACTIVE_SESSION_MS).map((f) => f.file);
       // Toujours au moins une session (la plus récente), même ancienne, pour peupler le monde.
       if (!wanted.length && files.length) wanted = [files[0].file];
       // Les sessions déjà suivies restent tant qu'elles ont des agents actifs récents.
       for (const [file, s] of this.sessions) {
-        if (!wanted.includes(file) && now - s.activity() < ACTIVE_SESSION_MS) wanted.push(file);
+        if (!wanted.includes(file) && now - (await s.activity()) < ACTIVE_SESSION_MS) wanted.push(file);
       }
-      replaced = replacements(wanted);
+      replaced = await replacements(wanted);
       wanted = wanted.filter((f) => !replaced.has(f));
     }
 
@@ -531,7 +565,7 @@ export class SessionWatcher extends EventEmitter {
     }
     for (const file of wanted) {
       if (this.sessions.has(file)) continue;
-      const s = new TrackedSession(file, (ev) => this.emitEvent(ev), inherit.get(file));
+      const s = await TrackedSession.open(file, (ev) => this.emitEvent(ev), inherit.get(file));
       this.sessions.set(file, s);
       changed = true;
       if (!initial) this.emitEvent({ type: 'sessionStart', session: s.info });

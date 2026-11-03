@@ -5,3 +5,11 @@ node_modules/**
 **/*.map
 tsconfig.json
 *.vsix
+docs/**
+essai/**
+.gitignore
+.gitattributes
+out/test/**
+.github/**
+eslint.config.mjs
+.editorconfig
