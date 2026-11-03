@@ -4,15 +4,15 @@ const TAU = Math.PI * 2;
 const CHALK = ['#ffe066', '#ff8fab', '#7df9ff', '#b9fbc0', '#cdb4db', '#ffffff'];
 
 // Les formes sont décrites dans un carré [-1, 1] (y vers le bas), comme une liste de traits.
-function arc(cx, cy, rx, ry, a0, a1, n = 22) {
+export function arc(cx, cy, rx, ry, a0, a1, n = 22) {
   return Array.from({ length: n + 1 }, (_, i) => {
     const a = a0 + ((a1 - a0) * i) / n;
     return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry];
   });
 }
-const circle = (cx, cy, r, n = 22) => arc(cx, cy, r, r, -Math.PI / 2, -Math.PI / 2 + TAU, n);
-const rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
-const mirror = (stroke) => stroke.map(([x, y]) => [-x, y]);
+export const circle = (cx, cy, r, n = 22) => arc(cx, cy, r, r, -Math.PI / 2, -Math.PI / 2 + TAU, n);
+export const rect = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]];
+export const mirror = (stroke) => stroke.map(([x, y]) => [-x, y]);
 
 const SHAPES = {
   'un cœur': () => [
@@ -123,17 +123,21 @@ const WORDS = ['IA <3', 'Bip boup', 'Coucou !', 'Hihi', 'Pas sage', 'zZz', 'Vive
 
 let lastKind = '';
 
-/** Prépare un dessin centré en (cx, cy) sur le tableau, de taille `size` (px). */
-export function makeDoodle(cx, cy, size, color) {
-  const kinds = [...Object.keys(SHAPES), 'mot'];
+/** Prépare un dessin centré en (cx, cy) sur le tableau, de taille `size` (px).
+ * `set` (theme.doodles) peut remplacer les formes, les mots et les craies : { shapes, words, chalk, weights }. */
+export function makeDoodle(cx, cy, size, color, set = {}) {
+  const shapes = set.shapes ?? SHAPES, words = set.words ?? WORDS, chalk = set.chalk ?? CHALK;
+  const kinds = [...Object.keys(shapes), 'mot'];
   let kind;
-  do kind = kinds[Math.floor(Math.random() * kinds.length)];
-  while (kind === lastKind);
+  // Tirage pondéré (`set.weights`, 1 par défaut), sans refaire deux fois de suite le même dessin
+  const weight = (k) => (k === lastKind ? 0 : set.weights?.[k] ?? 1);
+  let r = Math.random() * kinds.reduce((sum, k) => sum + weight(k), 0);
+  kind = kinds.find((k) => (r -= weight(k)) < 0) ?? kinds[0];
   lastKind = kind;
 
   const d = {
     kind,
-    color: Math.random() < 0.5 && color ? color : CHALK[Math.floor(Math.random() * CHALK.length)],
+    color: Math.random() < 0.5 && color ? color : chalk[Math.floor(Math.random() * chalk.length)],
     cx,
     cy,
     tilt: (Math.random() - 0.5) * 0.35,
@@ -144,7 +148,7 @@ export function makeDoodle(cx, cy, size, color) {
     fade: 2.5,
   };
   if (kind === 'mot') {
-    d.text = WORDS[Math.floor(Math.random() * WORDS.length)];
+    d.text = words[Math.floor(Math.random() * words.length)];
     // Taille de police plafonnée pour que le mot ne dépasse pas ~1,7 fois la taille d'un dessin.
     d.size = Math.round(Math.min(size * 0.36, (size * 1.7) / (d.text.length * 0.55)));
     d.duration = Math.min(5, 1.5 + d.text.length * 0.3);
@@ -153,7 +157,7 @@ export function makeDoodle(cx, cy, size, color) {
   }
   // Main un peu tremblante : chaque point bouge d'un ou deux pixels.
   const half = size / 2;
-  d.strokes = SHAPES[kind]().map((s) => s.map(([x, y]) => [x * half + (Math.random() - 0.5) * 2.5, y * half + (Math.random() - 0.5) * 2.5]));
+  d.strokes = shapes[kind]().map((s) => s.map(([x, y]) => [x * half + (Math.random() - 0.5) * 2.5, y * half + (Math.random() - 0.5) * 2.5]));
   d.lengths = d.strokes.map((s) => s.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - s[i][0], p[1] - s[i][1]), 0));
   d.total = d.lengths.reduce((a, b) => a + b, 0);
   d.duration = Math.min(7, Math.max(3, d.total / 110));

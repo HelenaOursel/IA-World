@@ -300,10 +300,10 @@ function updateDoodler(ch, dt) {
   if (!job.d) {
     const alive = plan.doodles.filter((d) => d.life - d.age > d.fade);
     if (alive.length > 5) eraseDoodle(alive[0], 1.5);
-    job.d = makeDoodle((job.x / BOARD_W + 0.5) * 640, 255 + Math.random() * 60, 80 + Math.random() * 25, ch.color);
+    job.d = makeDoodle((job.x / BOARD_W + 0.5) * 640, 255 + Math.random() * 60, 80 + Math.random() * 25, ch.color, theme.doodles);
     plan.doodles.push(job.d);
     ch.setAction('doodle');
-    if (Math.random() < 0.5) hud.say(ch.id, pickLine(DOODLE_START_LINES), 'speech', '', 2.5, false);
+    if (Math.random() < 0.5) hud.say(ch.id, pickLine(theme.doodles?.startLines ?? DOODLE_START_LINES), 'speech', '', 2.5, false);
     return;
   }
 
@@ -315,7 +315,7 @@ function updateDoodler(ch, dt) {
       d.drawing = false;
       ch.setAction('idle');
       ch.react('jump', 1);
-      if (Math.random() < 0.6) hud.say(ch.id, pickLine(DOODLE_DONE_LINES), 'speech', '', 2.5, false);
+      if (Math.random() < 0.6) hud.say(ch.id, pickLine(theme.doodles?.doneLines ?? DOODLE_DONE_LINES), 'speech', '', 2.5, false);
     }
     return;
   }

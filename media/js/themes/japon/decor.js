@@ -225,12 +225,48 @@ function buildManekiNeko(scene, [x, z]) {
   return paw;
 }
 
+/** Chrysanthème doré en relief au dos de la baie de serveurs placée en [x, z] (même orientation que world.js). */
+function buildChrysanthemum(scene, [x, z]) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.atan2(-x, -z);
+  // Dos de la baie (profondeur 0,75) : la fleur regarde vers l'extérieur
+  const flower = new THREE.Group();
+  flower.position.set(0, 1.4, -0.39);
+  flower.rotation.y = Math.PI;
+  g.add(flower);
+  const gold = mat('#e8b830', { metalness: 0.9, roughness: 0.3, emissive: '#7a5200', emissiveIntensity: 0.3 });
+  const deep = mat('#c9961e', { metalness: 0.9, roughness: 0.35, emissive: '#5a3a00', emissiveIntensity: 0.25 });
+  // Cerclage fin
+  flower.add(mesh(new THREE.TorusGeometry(0.4, 0.014, 8, 48), gold, 0, 0, 0));
+  // Deux couronnes de 16 pétales arrondis, la seconde décalée et plus courte
+  const petal = new THREE.SphereGeometry(1, 14, 10);
+  for (const [n, len, wid, off, m, dz] of [[16, 0.15, 0.05, 0, gold, 0.01], [16, 0.1, 0.04, Math.PI / 16, deep, 0.025]]) {
+    for (let i = 0; i < n; i++) {
+      const a = off + (i / n) * Math.PI * 2;
+      const r = 0.085 + len;
+      const p = new THREE.Mesh(petal, m);
+      p.scale.set(len, wid, 0.022);
+      p.position.set(Math.cos(a) * r, Math.sin(a) * r, dz);
+      p.rotation.z = a;
+      flower.add(p);
+    }
+  }
+  // Cœur bombé
+  const heart = mesh(sphere(0.085, 20, 14), gold, 0, 0, 0.02);
+  heart.scale.z = 0.45;
+  flower.add(heart);
+  scene.add(g);
+}
+
 /** Décor du thème : cerisier entre Recherche et Docs, bambous entre Planification et Code,
- * maneki-neko entre Docs et Planification (à la place de la corbeille), Yamato à quai. */
+ * maneki-neko entre Docs et Planification (à la place de la corbeille), Yamato à quai,
+ * chrysanthème doré au dos de la baie de serveurs. */
 export function japonDecor(scene) {
   const petals = buildCherry(scene, [-6.7, -2.4]);
   const bamboos = buildBambooGrove(scene, [2.35, -6.5]);
   const paw = buildManekiNeko(scene, [-2.45, -5.3]);
+  buildChrysanthemum(scene, [6.7, -2.4]);
   buildYamato(scene, 8.4 * Math.cos(Math.PI / 8), 0.5);
   return (t) => {
     // Le maneki-neko salue : la patte se lève et s'abaisse doucement
