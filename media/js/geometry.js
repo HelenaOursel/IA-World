@@ -12,8 +12,14 @@ function remap(u, half, r) {
 
 const boxCache = new Map();
 
+/**
+ * Nombre de segments par côté selon l'arrondi : un petit chanfrein n'a besoin que de quelques
+ * segments (les normales calculées le gardent lisse), un gros arrondi davantage.
+ */
+const segmentsFor = (r) => (r < 0.02 ? 3 : r < 0.05 ? 5 : r < 0.1 ? 7 : 9);
+
 /** Boîte aux arêtes arrondies avec normales lisses (pas de coutures). */
-export function roundedBox(w, h, d, r = 0.1, seg = 10) {
+export function roundedBox(w, h, d, r = 0.1, seg = segmentsFor(r)) {
   const key = [w, h, d, r, seg].join(':');
   if (boxCache.has(key)) return boxCache.get(key);
   r = Math.min(r, w / 2 - 1e-4, h / 2 - 1e-4, d / 2 - 1e-4);
@@ -134,6 +140,96 @@ export function neon(color, intensity = 1.6, opts = {}) {
 /** Métal sombre pour la structure de l'usine. */
 export function metal(color = '#1d2330', opts = {}) {
   return mat(color, { metalness: 0.55, roughness: 0.42, ...opts });
+}
+
+/**
+ * Retire l'ombre portée des objets qui n'en ont pas besoin, pour alléger le rendu des ombres :
+ * objets lumineux (non éclairés : une lampe ne fait pas d'ombre) et très petites pièces.
+ */
+export function trimShadows(root, minRadius = 0.06) {
+  const s = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!o.isMesh || !o.castShadow) return;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    if (m?.isMeshBasicMaterial || m?.isShaderMaterial) {
+      o.castShadow = false;
+      return;
+    }
+    const g = o.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    o.getWorldScale(s);
+    if (g.boundingSphere.radius * Math.max(s.x, s.y, s.z) < minRadius) o.castShadow = false;
+  });
+}
+
+/** Une géométrie se fusionne si tous ses attributs sont de simples tableaux de flottants. */
+const mergeable = (g) => Object.values(g.attributes).every((a) => a.isBufferAttribute && a.array instanceof Float32Array) && !Object.keys(g.morphAttributes).length;
+
+/**
+ * Fusionne les pièces immobiles de `root` qui partagent un matériau : un seul maillage (donc un seul
+ * appel de dessin, et un seul rendu d'ombre) par matériau au lieu d'un par pièce. Le rendu est identique.
+ * `keep` : objets animés ou déplacés plus tard, laissés tels quels avec leurs enfants.
+ * Les objets cachés et les matériaux transparents (triés par objet) ne sont pas fusionnés.
+ */
+export function mergeStatic(root, keep = []) {
+  const skip = new Set(keep);
+  const groups = new Map();
+  const visit = (o) => {
+    if (skip.has(o) || (o !== root && !o.visible)) return;
+    if (o.isMesh && !o.isInstancedMesh && !o.isSkinnedMesh && !o.children.length && !Array.isArray(o.material) && !o.material.transparent && mergeable(o.geometry)) {
+      const key = [o.material.uuid, o.castShadow, o.receiveShadow, o.renderOrder, Object.keys(o.geometry.attributes).sort()].join('|');
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(o);
+    }
+    o.children.forEach(visit);
+  };
+  root.updateMatrixWorld(true);
+  visit(root);
+
+  const toRoot = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  const m = new THREE.Matrix4();
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const names = Object.keys(list[0].geometry.attributes);
+    let vertices = 0, indices = 0;
+    for (const o of list) {
+      vertices += o.geometry.attributes.position.count;
+      indices += o.geometry.index?.count ?? o.geometry.attributes.position.count;
+    }
+    const arrays = Object.fromEntries(names.map((n) => [n, new Float32Array(vertices * list[0].geometry.attributes[n].itemSize)]));
+    const index = new (vertices > 65535 ? Uint32Array : Uint16Array)(indices);
+    let v = 0, i = 0;
+    for (const o of list) {
+      // La pièce, ramenée dans le repère de root (applyMatrix4 transforme aussi les normales)
+      m.multiplyMatrices(toRoot, o.matrixWorld);
+      const g = o.geometry.clone().applyMatrix4(m);
+      for (const n of names) arrays[n].set(g.attributes[n].array, v * g.attributes[n].itemSize);
+      const count = g.attributes.position.count;
+      const src = g.index?.array;
+      const n = src?.length ?? count;
+      // Une échelle négative (reflet) inverse le sens des triangles : on le rétablit
+      const flip = m.determinant() < 0;
+      for (let k = 0; k < n; k += 3) {
+        const a = src ? src[k] : k, b = src ? src[k + 1] : k + 1, c = src ? src[k + 2] : k + 2;
+        index[i++] = v + a;
+        index[i++] = v + (flip ? c : b);
+        index[i++] = v + (flip ? b : c);
+      }
+      v += count;
+      g.dispose();
+      o.removeFromParent();
+    }
+    const geo = new THREE.BufferGeometry();
+    for (const n of names) geo.setAttribute(n, new THREE.BufferAttribute(arrays[n], list[0].geometry.attributes[n].itemSize));
+    geo.setIndex(new THREE.BufferAttribute(index, 1));
+    geo.computeBoundingSphere();
+    const merged = new THREE.Mesh(geo, list[0].material);
+    merged.castShadow = list[0].castShadow;
+    merged.receiveShadow = list[0].receiveShadow;
+    merged.renderOrder = list[0].renderOrder;
+    root.add(merged);
+  }
+  return root;
 }
 
 /** Lignes de balayage façon écran. */

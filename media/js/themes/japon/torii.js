@@ -1,9 +1,10 @@
 // Torii vermillon du thème Japon, à la place du portail d'assemblage.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { cylinder, mat, mesh, neon, roundedBox } from '../../geometry.js';
+import { cylinder, mat, mergeStatic, mesh, neon, roundedBox } from '../../geometry.js';
 
 /** Torii vermillon à la place du portail d'assemblage. */
-export function buildTorii(g) {
+export function buildTorii(gate) {
+  const g = new THREE.Group();
   // Torii : piliers vermillon sur socles noirs, traverse (nuki), linteaux courbés (shimaki et kasagi)
   const red = mat('#d8392a', { roughness: 0.55 });
   const black = mat('#1c1616', { roughness: 0.6 });
@@ -31,5 +32,6 @@ export function buildTorii(g) {
   const plaque = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.28), neon('#ffcf5a', 1.2));
   plaque.position.set(0, 1.9, 0.081);
   g.add(plaque);
+  gate.add(mergeStatic(g));
 
 }

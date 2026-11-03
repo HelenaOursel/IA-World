@@ -9,6 +9,7 @@ import { Character } from './character.js';
 import { Demo } from './demo.js';
 import { eraseDoodle, makeDoodle } from './doodles.js';
 import { Effects } from './effects.js';
+import { trimShadows } from './geometry.js';
 import { Hud, KIND_ICONS, plainText } from './hud.js';
 import { THEME_LIST, loadTheme } from './themes/index.js';
 import { buildWorld, docRows, randomCodeRow } from './world.js';
@@ -44,7 +45,8 @@ const IDLE_AFTER_MS = 35_000;
 
 const app = document.getElementById('app');
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+// Plafonné à 1,5 : au-delà, la différence ne se voit pas et le coût de rendu explose sur les écrans très denses
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -393,6 +395,7 @@ function primaryTitle(s) {
 
 function addCharacter(ch) {
   ch.root.userData.charId = ch.id;
+  trimShadows(ch.root, 0.04);
   scene.add(ch.root);
   chars.set(ch.id, ch);
   queues.set(ch.id, { items: [], nextAt: 0 });
@@ -1095,7 +1098,12 @@ function updateCamera(dt) {
   camera.lookAt(cam.target);
 }
 
+let skipFrame = false;
 function frame() {
+  // Panneau sans le focus (on code dans l'éditeur) : 30 images/s au lieu de 60, pour économiser la batterie.
+  // Les animations avancent selon le temps écoulé, elles restent à la même vitesse.
+  skipFrame = !skipFrame && !document.hasFocus();
+  if (skipFrame) return;
   const now = performance.now();
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;

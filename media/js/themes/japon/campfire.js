@@ -1,10 +1,11 @@
 // Feu de camp du thème Japon, à la place de la tour centrale : les pandas dorment autour,
 // et y font griller des bananes au bout d'un bâton.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { cylinder, mat, mesh, neon, sphere } from '../../geometry.js';
+import { cylinder, mat, mergeStatic, mesh, neon, sphere } from '../../geometry.js';
 
 /** Feu de camp au centre et coussins de mousse où les pandas dorment ; renvoie de quoi l'animer. */
 export function buildCampfire(g, angles, radius) {
+  const before = [...g.children];
   // Cercle de pierres
   const stone = mat('#8a8f98', { roughness: 0.95 });
   for (let i = 0; i < 11; i++) {
@@ -66,6 +67,8 @@ export function buildCampfire(g, angles, radius) {
     pad.rotation.y = a;
     g.add(pad);
   });
+  // Pierres, bûches, braises et coussins sont immobiles ; flammes et étincelles bougent
+  mergeStatic(g, [...before, ...flames, ...sparks]);
   const light = new THREE.PointLight('#ff8a3c', 4, 7, 1.6);
   light.position.set(0, 0.9, 0);
   g.add(light);

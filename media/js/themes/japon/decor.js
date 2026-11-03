@@ -1,6 +1,6 @@
 // Thème Japon : pelouse fleurie, cerisier, bosquet de bambous, maneki-neko doré et cuirassé Yamato à quai.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { cylinder, mat, mesh, sphere } from '../../geometry.js';
+import { cylinder, mat, mergeStatic, mesh, sphere } from '../../geometry.js';
 import { buildIsland } from './island.js';
 import { buildYamato } from './yamato.js';
 
@@ -105,6 +105,8 @@ function buildCherry(scene, [x, z]) {
     p.position.set(Math.cos(a) * d, 0.012 + i * 0.0001, Math.sin(a) * d);
     g.add(p);
   }
+  // Tout ce qui précède est immobile ; les pétales en vol, ajoutés ensuite, restent à part
+  mergeStatic(g);
   // Pétales en vol (réutilisés en boucle)
   const petalGeo = new THREE.CircleGeometry(0.04, 5);
   petalGeo.scale(1, 0.6, 1);
@@ -150,6 +152,8 @@ function buildBambooGrove(scene, [x, z]) {
       l.rotation.set(Math.cos(a) * 1.0, 0, -Math.sin(a) * 1.0);
       stalk.add(l);
     }
+    // Chaque tige ondule d'un bloc : ses pièces sont fusionnées
+    mergeStatic(stalk);
     stalk.userData = { phase: i * 0.9, lean: (sx * 0.12), leanZ: (sz * 0.12) };
     g.add(stalk);
     stalks.push(stalk);
@@ -222,6 +226,7 @@ function buildManekiNeko(scene, [x, z]) {
   const glow = new THREE.PointLight('#ffcf5a', 0.8, 1.6, 1.8);
   glow.position.set(0, 0.8, 0.4);
   g.add(glow);
+  mergeStatic(g, [paw]);
   scene.add(g);
   return paw;
 }
@@ -257,7 +262,7 @@ function buildChrysanthemum(scene, [x, z]) {
   const heart = mesh(sphere(0.085, 20, 14), gold, 0, 0, 0.02);
   heart.scale.z = 0.45;
   flower.add(heart);
-  scene.add(g);
+  scene.add(mergeStatic(g));
 }
 
 /** Décor du thème : cerisier entre Recherche et Docs, bambous entre Planification et Code,

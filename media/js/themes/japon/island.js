@@ -1,7 +1,7 @@
 // Le plateau du thème Japon devient une petite île : falaise de terre, plage de galets, lac tout autour,
 // le mont Fuji enneigé au loin, derrière le tableau de planification, la lune et des lanternes qui montent dans la nuit.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { mat, mesh } from '../../geometry.js';
+import { mat, mergeStatic, mesh } from '../../geometry.js';
 
 const R = 8.4; // rayon de la plate-forme (world.js)
 const LAKE_Y = -0.52; // niveau de l'eau : la ligne de flottaison du Yamato
@@ -67,7 +67,7 @@ function buildRocks() {
     rock.castShadow = true;
     g.add(rock);
   }
-  return g;
+  return mergeStatic(g);
 }
 
 /** Lac à perte de vue, assez transparent pour laisser voir le reflet du Fuji. */

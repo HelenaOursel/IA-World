@@ -1,7 +1,7 @@
 // Cuirassé Yamato (configuration 1945), en maquette à l'échelle des pandas, amarré au bord de la plate-forme.
 // Tout est construit en mètres réels puis réduit d'un facteur SCALE.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { cylinder, mat, mesh, roundedBox, sphere } from '../../geometry.js';
+import { cylinder, mat, mergeStatic, mesh, roundedBox, sphere } from '../../geometry.js';
 
 const L = 263; // longueur hors tout (m)
 const B = 38.9; // largeur maximale (m)
@@ -341,7 +341,8 @@ function buildShip() {
   boom.rotation.x = -0.6;
   boom.add(box(0.8, 0.8, 16, dark(), 0, 0, 8, 0.1));
   ship.add(boom);
-  return ship;
+  // Le navire ne bouge pas : quelques maillages par matériau au lieu de plusieurs centaines de pièces
+  return mergeStatic(ship);
 }
 
 /**
@@ -358,11 +359,13 @@ export function buildYamato(scene, apothem, z = 0.5) {
   const world = (x, y, fb) => new THREE.Vector3(shipX + x * SCALE, y * SCALE, z + zAt(fb) * SCALE);
   const iron = mat('#2a3140', { metalness: 0.55, roughness: 0.42 });
   const ropeMat = mat('#c8b48a', { roughness: 0.9 });
+  // Amarres et passerelle, fusionnées à la fin
+  const moor = new THREE.Group();
 
   // Bittes d'amarrage sur le quai et sur le pont, reliées par des aussières qui pendent un peu
   const bitt = (p) => {
-    scene.add(mesh(cylinder(0.05, 0.06, 0.14, 10), iron, p.x, p.y + 0.07, p.z));
-    scene.add(mesh(cylinder(0.075, 0.075, 0.02, 10), iron, p.x, p.y + 0.14, p.z));
+    moor.add(mesh(cylinder(0.05, 0.06, 0.14, 10), iron, p.x, p.y + 0.07, p.z));
+    moor.add(mesh(cylinder(0.075, 0.075, 0.02, 10), iron, p.x, p.y + 0.14, p.z));
   };
   const quay = [new THREE.Vector3(apothem - 0.2, 0, 3), new THREE.Vector3(apothem - 0.2, 0, -3)];
   quay.forEach(bitt);
@@ -373,19 +376,20 @@ export function buildYamato(scene, apothem, z = 0.5) {
     const a = quay[q].clone().setY(0.12), b = onDeck.clone().setY(onDeck.y + 0.12);
     const mid = a.clone().lerp(b, 0.5);
     mid.y -= 0.25;
-    scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 24, 0.015, 6), ropeMat));
+    moor.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 24, 0.015, 6), ropeMat));
   }
 
   // Passerelle d'embarquement, derrière le poste Terminal
   const gz = z - 0.3;
   const x0 = apothem - 0.15, x1 = shipX - (B / 2) * SCALE + 0.3;
   const plank = mat('#8a6a45', { roughness: 0.85 });
-  scene.add(mesh(new THREE.BoxGeometry(x1 - x0, 0.03, 0.34), plank, (x0 + x1) / 2, 0.03, gz));
+  moor.add(mesh(new THREE.BoxGeometry(x1 - x0, 0.03, 0.34), plank, (x0 + x1) / 2, 0.03, gz));
   for (const s of [-1, 1]) {
-    for (const x of [x0 + 0.05, (x0 + x1) / 2, x1 - 0.05]) scene.add(mesh(cylinder(0.012, 0.012, 0.22, 6), iron, x, 0.14, gz + s * 0.16));
+    for (const x of [x0 + 0.05, (x0 + x1) / 2, x1 - 0.05]) moor.add(mesh(cylinder(0.012, 0.012, 0.22, 6), iron, x, 0.14, gz + s * 0.16));
     const rail = mesh(cylinder(0.01, 0.01, x1 - x0, 6), ropeMat, (x0 + x1) / 2, 0.24, gz + s * 0.16);
     rail.rotation.z = Math.PI / 2;
-    scene.add(rail);
+    moor.add(rail);
   }
+  scene.add(mergeStatic(moor));
   return ship;
 }

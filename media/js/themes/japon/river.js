@@ -1,6 +1,6 @@
 // Rivière zen du thème Japon, à la place du tapis roulant : gravier ratissé, roseaux, lotus et koï.
 import * as THREE from '../../../vendor/three.module.min.js';
-import { cylinder, mat, mesh, sphere } from '../../geometry.js';
+import { cylinder, mat, mergeStatic, mesh, sphere } from '../../geometry.js';
 
 // Rivière zen qui serpente à l'avant de la plate-forme, dans un lit de gravier ratissé.
 const RIVER_X = 3.9; // demi-longueur
@@ -226,6 +226,8 @@ export function buildZenRiver(scene) {
     return k;
   });
 
+  // Galets, rochers, pas japonais et nénuphars sont immobiles ; roseaux, lotus et koï bougent
+  mergeStatic(g, [...reeds, lotus, ...kois]);
   scene.add(g);
 
   const update = (t, dt) => {

@@ -1,6 +1,6 @@
 // Décor : plate-forme d'usine futuriste flottante, postes de travail et machines.
 import * as THREE from '../vendor/three.module.min.js';
-import { CanvasScreen, cylinder, mat, metal, mesh, neon, roundRect, roundedBox, scanlines, sphere } from './geometry.js';
+import { CanvasScreen, cylinder, mat, metal, mesh, neon, roundRect, roundedBox, scanlines, sphere, trimShadows } from './geometry.js';
 import { drawDoodles } from './doodles.js';
 
 const R = 8.4; // rayon de la plate-forme octogonale
@@ -947,6 +947,8 @@ export function buildWorld(scene, theme = {}) {
   stations.dock = new Dock();
   buildDock(stations.dock, scene, theme);
   applyTint(scene, theme.tint);
+  // Après construction du décor du thème aussi : seules les ombres utiles restent
+  trimShadows(scene);
   const decor = theme.decor?.(scene);
 
   const timers = { slow: 0, fast: 0, racks: 0 };
