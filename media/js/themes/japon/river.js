@@ -4,7 +4,7 @@ import { cylinder, mat, mesh, sphere } from '../../geometry.js';
 
 // Rivière zen qui serpente à l'avant de la plate-forme, dans un lit de gravier ratissé.
 const RIVER_X = 3.9; // demi-longueur
-const riverZ = (x) => 6.35 + Math.sin(x * 0.85 + 0.6) * 0.38;
+export const riverZ = (x) => 6.35 + Math.sin(x * 0.85 + 0.6) * 0.38;
 
 /** Point (x, z), direction et normale de la rivière au paramètre u (0 → 1). */
 function riverAt(u) {

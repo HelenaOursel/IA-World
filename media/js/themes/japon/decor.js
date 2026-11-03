@@ -1,4 +1,4 @@
-// Thème Japon : pelouse fleurie, cerisier, bosquet de bambous et cuirassé Yamato à quai.
+// Thème Japon : pelouse fleurie, cerisier, bosquet de bambous, maneki-neko doré et cuirassé Yamato à quai.
 import * as THREE from '../../../vendor/three.module.min.js';
 import { cylinder, mat, mesh, sphere } from '../../geometry.js';
 import { buildYamato } from './yamato.js';
@@ -157,12 +157,84 @@ function buildBambooGrove(scene, [x, z]) {
   return stalks;
 }
 
-/** Décor du thème : cerisier entre Recherche et Docs, bambous entre Planification et Code, Yamato à quai. */
+/** Maneki-neko doré sur un socle de pierre : chat assis qui salue de sa patte levée, clochette au cou. */
+function buildManekiNeko(scene, [x, z]) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  // Tourné vers le centre du plateau
+  g.rotation.y = Math.atan2(-x, -z);
+  const stone = mat('#8a8f98', { roughness: 0.95 });
+  g.add(mesh(cylinder(0.3, 0.34, 0.22, 8), stone, 0, 0.11, 0));
+  g.add(mesh(cylinder(0.33, 0.33, 0.03, 8), mat('#6f747c', { roughness: 0.95 }), 0, 0.235, 0));
+
+  const gold = mat('#e8b830', { metalness: 0.9, roughness: 0.28, emissive: '#7a5200', emissiveIntensity: 0.25 });
+  const cat = new THREE.Group();
+  cat.position.y = 0.25;
+  g.add(cat);
+  // Corps assis (poire), tête ronde et oreilles
+  const body = mesh(sphere(0.2, 24, 16), gold, 0, 0.2, 0);
+  body.scale.set(1, 1.1, 0.9);
+  cat.add(body);
+  const head = mesh(sphere(0.17, 24, 16), gold, 0, 0.5, 0.02);
+  head.scale.set(1.12, 0.95, 0.95);
+  cat.add(head);
+  for (const sx of [-1, 1]) {
+    const ear = mesh(new THREE.ConeGeometry(0.06, 0.1, 4), gold, sx * 0.11, 0.65, 0.0);
+    ear.rotation.set(0, Math.PI / 4, -sx * 0.35);
+    cat.add(ear);
+  }
+  // Visage : yeux en croissants, museau et moustaches sombres
+  const ink = mat('#3a2a10', { roughness: 0.6 });
+  for (const sx of [-1, 1]) {
+    const eye = mesh(new THREE.TorusGeometry(0.03, 0.008, 6, 12, Math.PI), ink, sx * 0.065, 0.53, 0.168);
+    eye.rotation.z = Math.PI;
+    cat.add(eye);
+    for (const dy of [-0.012, 0.012]) {
+      const w = mesh(cylinder(0.0025, 0.0025, 0.09, 4), ink, sx * 0.1, 0.47 + dy, 0.15);
+      w.rotation.z = Math.PI / 2 + sx * dy * 8;
+      cat.add(w);
+    }
+  }
+  cat.add(mesh(sphere(0.018, 10, 8), mat('#d9536b', { roughness: 0.5 }), 0, 0.475, 0.175));
+  // Collier rouge et clochette dorée
+  const collar = mesh(new THREE.TorusGeometry(0.15, 0.018, 8, 28), mat('#c8282b', { roughness: 0.5 }), 0, 0.36, 0.02);
+  collar.rotation.x = Math.PI / 2 - 0.15;
+  cat.add(collar);
+  cat.add(mesh(sphere(0.035, 14, 10), gold, 0, 0.32, 0.17));
+  // Patte droite posée sur une pièce, patte gauche levée qui salue (articulée à l'épaule)
+  const coin = mesh(cylinder(0.07, 0.07, 0.015, 18), gold, 0.08, 0.17, 0.17);
+  coin.rotation.x = Math.PI / 2 - 0.2;
+  coin.scale.z = 1.4;
+  cat.add(coin);
+  cat.add(mesh(sphere(0.05, 14, 10), gold, 0.08, 0.2, 0.16));
+  const paw = new THREE.Group();
+  paw.position.set(-0.15, 0.36, 0.06);
+  const arm = mesh(sphere(0.05, 14, 10), gold, 0, 0.1, 0);
+  arm.scale.set(0.9, 1.9, 0.9);
+  paw.add(arm);
+  paw.add(mesh(sphere(0.055, 14, 10), gold, 0, 0.2, 0.02));
+  cat.add(paw);
+  // Queue enroulée sur le côté
+  const tail = mesh(new THREE.TorusGeometry(0.09, 0.025, 8, 20, Math.PI * 1.2), gold, 0.15, 0.08, -0.08);
+  tail.rotation.set(Math.PI / 2, 0, 0.4);
+  cat.add(tail);
+  const glow = new THREE.PointLight('#ffcf5a', 0.8, 1.6, 1.8);
+  glow.position.set(0, 0.8, 0.4);
+  g.add(glow);
+  scene.add(g);
+  return paw;
+}
+
+/** Décor du thème : cerisier entre Recherche et Docs, bambous entre Planification et Code,
+ * maneki-neko entre Docs et Planification (à la place de la corbeille), Yamato à quai. */
 export function japonDecor(scene) {
   const petals = buildCherry(scene, [-6.7, -2.4]);
   const bamboos = buildBambooGrove(scene, [2.35, -6.5]);
+  const paw = buildManekiNeko(scene, [-2.45, -5.3]);
   buildYamato(scene, 8.4 * Math.cos(Math.PI / 8), 0.5);
   return (t) => {
+    // Le maneki-neko salue : la patte se lève et s'abaisse doucement
+    paw.rotation.x = -0.15 + Math.sin(t * 2.4) * 0.35;
     // Pétales de cerisier qui tombent en spirale, puis repartent du houppier.
     for (const p of petals) {
       const u = p.userData;
