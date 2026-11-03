@@ -594,7 +594,9 @@ const actionTools = {
 };
 
 function startThemeAction(ch) {
-  const list = theme.actions.idle;
+  // Certaines activités sont réservées à certains personnages (`can`)
+  const list = theme.actions.idle.filter((a) => a.can?.(ch) ?? true);
+  if (!list.length) return;
   const total = list.reduce((s, a) => s + (a.weight ?? 1), 0);
   let r = Math.random() * total;
   const def = list.find((a) => (r -= a.weight ?? 1) < 0) ?? list[0];

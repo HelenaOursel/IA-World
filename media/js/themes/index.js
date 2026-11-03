@@ -23,7 +23,8 @@
 //   actions                  { poses, idle } :
 //     poses[nom] = { pose(p, t, ch), face(f, t, ch) }  poses ajoutées au personnage (ch.setAction(nom),
 //                                                     ou ch.moveAction = nom pour se déplacer ainsi)
-//     idle = [{ label, weight, start(ch, tools, s), update(ch, dt, temps, tools, s) → true quand fini, stop() }]
+//     idle = [{ label, weight, can(ch), start(ch, tools, s), update(ch, dt, temps, tools, s) → true quand fini, stop() }]
+//                                                     (can : réservée aux personnages pour qui elle renvoie true)
 //                                                     activités quand le personnage n'a rien à faire ;
 //                                                     tools : say, walk, randomSpot, giftTo, effects, scene, stations
 
