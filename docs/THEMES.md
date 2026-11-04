@@ -112,6 +112,7 @@ Tout est facultatif, sauf `skin` ou `character`. La liste qui fait référence e
 | `trash: 'fire'`            | pas de corbeille : on jette au feu                    | `japon`                  |
 | `idleThrow: false`         | pas de paniers de papier au repos                     | `japon`                  |
 | `doodles`                  | dessins au tableau                                    | `japon/doodles.js`       |
+| `board`                    | le tableau de planification : `{ build(groupe, couleur), draw(ctx, w, h, tâches, dessins) }` | `japon/board.js` |
 
 ### Cadeau et activités
 

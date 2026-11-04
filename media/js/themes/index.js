@@ -20,7 +20,8 @@
 //   desk(group, couleur)     remplace le bureau des postes (plateau à 0,53 m) ; écran et clavier sont gardés
 //   workstation(st, screen, { sw, sh })  remplace tout le poste, bureau et clavier compris ; renvoie { labelY } ;
 //                            il doit définir st.keys (point des étincelles) et peut définir st.animate(t, occupé)
-//   doodles                  dessins au tableau : { shapes: { nom: () => traits }, weights, words, chalk, startLines, doneLines }
+//   doodles                  dessins au tableau : { shapes: { nom: () => traits }, weights, words, chalk, ownColor, startLines, doneLines }
+//   board                    tableau de planification : { build(group, couleur) pour le cadre, draw(ctx, w, h, tâches, dessins) pour l'écran }
 //   trash: 'fire'            pas de corbeille : ce qui est supprimé est jeté dans le feu au centre
 //   idleThrow: false         pas de paniers de papier pour s'amuser quand rien ne se passe
 //   sleepText                texte affiché quand le personnage se repose

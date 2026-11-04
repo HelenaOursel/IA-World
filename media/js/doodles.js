@@ -124,7 +124,7 @@ const WORDS = ['IA <3', 'Bip boup', 'Coucou !', 'Hihi', 'Pas sage', 'zZz', 'Vive
 let lastKind = '';
 
 /** Prépare un dessin centré en (cx, cy) sur le tableau, de taille `size` (px).
- * `set` (theme.doodles) peut remplacer les formes, les mots et les craies : { shapes, words, chalk, weights }. */
+ * `set` (theme.doodles) peut remplacer les formes, les mots et les craies : { shapes, words, chalk, weights, ownColor }. */
 export function makeDoodle(cx, cy, size, color, set = {}) {
   const shapes = set.shapes ?? SHAPES, words = set.words ?? WORDS, chalk = set.chalk ?? CHALK;
   const kinds = [...Object.keys(shapes), 'mot'];
@@ -136,7 +136,8 @@ export function makeDoodle(cx, cy, size, color, set = {}) {
 
   const d = {
     kind,
-    color: Math.random() < 0.5 && color ? color : chalk[Math.floor(Math.random() * chalk.length)],
+    // La couleur du personnage, une fois sur deux (sauf `ownColor: false` : seulement les craies du thème)
+    color: set.ownColor !== false && Math.random() < 0.5 && color ? color : chalk[Math.floor(Math.random() * chalk.length)],
     cx,
     cy,
     tilt: (Math.random() - 0.5) * 0.35,

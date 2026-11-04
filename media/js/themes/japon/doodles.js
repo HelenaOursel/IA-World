@@ -115,8 +115,10 @@ export const doodles = {
   shapes,
   // Le chrysanthème revient bien plus souvent que les autres dessins
   weights: { 'un chrysanthème': 4 },
-  // Craies douces : rose sakura, or, vert bambou, bleu rivière, blanc
-  chalk: ['#ffb7c5', '#ffd166', '#b9fbc0', '#9fe3ff', '#ffffff', '#ff8fab'],
+  // Encres sur le papier washi du tableau : sumi noir (souvent), vermillon, indigo, vert mousse, prune
+  chalk: ['#1e1712', '#1e1712', '#b3261e', '#2c4a7a', '#3f6b2a', '#6a3a6e'],
+  // Pas la couleur du panda : elle se lirait mal sur le papier
+  ownColor: false,
   // Petits mots, uniquement en caractères du clavier
   words: ['Kawaii !', 'Arigato', 'Zen', 'Banzai !', 'Ommm', 'Itadakimasu', ':3', 'Sakura <3'],
   startLines: ['Hihi…', 'Chut !', 'Personne regarde ?', 'Juste un petit dessin…', 'Un peu de calligraphie…'],

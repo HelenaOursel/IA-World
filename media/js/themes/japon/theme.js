@@ -4,6 +4,7 @@ import { actions } from './actions.js';
 import { buildCampfire } from './campfire.js';
 import { japonDecor, paintGrass } from './decor.js';
 import { buildJapaneseDesk } from './desk.js';
+import { board } from './board.js';
 import { gift } from './gift.js';
 import { doodles } from './doodles.js';
 import { PandaCharacter } from './panda.js';
@@ -28,6 +29,7 @@ export default {
   racks: [[6.7, -2.4]],
   desk: buildJapaneseDesk,
   doodles,
+  board,
   // Pas de corbeille : on jette les fichiers au feu, et on ne s'amuse pas à faire des paniers.
   trash: 'fire',
   idleThrow: false,

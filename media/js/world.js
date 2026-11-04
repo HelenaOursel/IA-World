@@ -59,7 +59,7 @@ export function buildWorld(scene, theme = {}) {
   web.beacon = beacon;
   web.topLocal = new THREE.Vector3(0.65, 1.32, -0.2);
 
-  buildPlan(stations.plan);
+  buildPlan(stations.plan, theme.board);
   buildAssembly(stations.agent, theme.gate);
   if (theme.trash === 'fire') burnInFire(stations.trash);
   else buildTrash(stations.trash);

@@ -138,17 +138,22 @@ export function octagon(geo) {
   return geo;
 }
 
-export function buildPlan(st) {
+/** Tableau de planification ; `board` (theme.board) peut remplacer le cadre (`build`) et le dessin de l'écran (`draw`). */
+export function buildPlan(st, board) {
   const g = st.group;
   st.todos = [];
   st.doodles = [];
-  for (const x of [-1.35, 1.35]) g.add(mesh(roundedBox(0.12, 2.6, 0.12, 0.04), metal('#2a3140'), x, 1.3, -0.1));
-  g.add(mesh(roundedBox(2.9, 1.75, 0.08, 0.03), metal('#10141c'), 0, 1.75, -0.1));
-  st.screen = new CanvasScreen(640, 400, (ctx, w, h) => drawBoard(ctx, w, h, st.todos, st.doodles));
+  if (board?.build) board.build(g, st.color);
+  else {
+    for (const x of [-1.35, 1.35]) g.add(mesh(roundedBox(0.12, 2.6, 0.12, 0.04), metal('#2a3140'), x, 1.3, -0.1));
+    g.add(mesh(roundedBox(2.9, 1.75, 0.08, 0.03), metal('#10141c'), 0, 1.75, -0.1));
+    g.add(mesh(new THREE.BoxGeometry(2.9, 0.02, 0.02), neon(st.color, 2.2), 0, 0.87, -0.05));
+  }
+  const draw = board?.draw ?? drawBoard;
+  st.screen = new CanvasScreen(640, 400, (ctx, w, h) => draw(ctx, w, h, st.todos, st.doodles));
   const face = screenMesh(st.screen, 2.75, 1.6);
   face.position.set(0, 1.75, -0.055);
   g.add(face);
-  g.add(mesh(new THREE.BoxGeometry(2.9, 0.02, 0.02), neon(st.color, 2.2), 0, 0.87, -0.05));
   const l = label(STATION_NAMES.plan, st.color);
   l.position.set(0, 2.95, -0.1);
   g.add(l);
