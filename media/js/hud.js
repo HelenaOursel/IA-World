@@ -123,8 +123,20 @@ export class Hud {
     this.title.addEventListener('click', () => handlers.pickSession());
 
     this.agentsPanel = el('div', 'panel agents', root);
-    el('div', 'panel-title', this.agentsPanel, 'Unités actives');
+    // En-tête cliquable : replie la liste pour libérer le plateau.
+    const agentsHead = el('button', 'panel-title agents-head', this.agentsPanel);
+    el('span', '', agentsHead, 'Unités actives');
+    this.agentCount = el('span', 'agents-count', agentsHead, '0');
+    el('span', 'agents-chevron', agentsHead, '▾');
+    agentsHead.addEventListener('click', () => this.setAgentsCollapsed(!this.agentsCollapsed));
     this.agentList = el('div', 'agent-list', this.agentsPanel);
+    let collapsed = false;
+    try {
+      collapsed = localStorage.getItem('iaworld.agentsCollapsed') === '1';
+    } catch {
+      /* stockage indisponible : panneau déplié */
+    }
+    this.setAgentsCollapsed(collapsed, false);
 
     this.log = el('div', 'panel log', root);
     el('div', 'panel-title', this.log, 'Journal');
@@ -207,6 +219,21 @@ export class Hud {
     this.hudBtn.classList.toggle('active', hidden);
     this.hudBtn.textContent = hidden ? '○ HUD' : '◉ HUD';
     this.hudBtn.title = hidden ? 'Afficher le HUD' : 'Masquer le HUD';
+  }
+
+  /** Replie ou déplie le panneau des unités actives (état mémorisé). */
+  setAgentsCollapsed(collapsed, save = true) {
+    this.agentsCollapsed = collapsed;
+    this.agentsPanel.classList.toggle('collapsed', collapsed);
+    const head = this.agentsPanel.querySelector('.agents-head');
+    head.setAttribute('aria-expanded', String(!collapsed));
+    head.title = collapsed ? 'Afficher les unités' : 'Replier les unités';
+    if (!save) return;
+    try {
+      localStorage.setItem('iaworld.agentsCollapsed', collapsed ? '1' : '0');
+    } catch {
+      /* stockage indisponible : état conservé pour cette ouverture seulement */
+    }
   }
 
   setSession(title, live) {
@@ -315,6 +342,7 @@ export class Hud {
     const act = el('div', 'agent-act', card, 'En attente');
     card.addEventListener('click', () => this.handlers.follow(ch.id));
     this.cards.set(ch.id, { card, act, type });
+    this.agentCount.textContent = String(this.cards.size);
     this.addLogTab(ch.id, ch.name, ch.color);
   }
 
@@ -331,6 +359,7 @@ export class Hud {
       setTimeout(() => c.card.remove(), 400);
     }
     this.cards.delete(id);
+    this.agentCount.textContent = String(this.cards.size);
   }
 
   setFollowed(id) {

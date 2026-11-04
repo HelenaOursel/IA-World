@@ -190,6 +190,53 @@ body {
   overflow-y: auto;
 }
 
+/* En-tête cliquable qui replie le panneau des unités */
+.agents button.agents-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agents button.agents-head:hover {
+  opacity: 1;
+}
+
+.agents-count {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  letter-spacing: 0.04em;
+}
+
+.agents-chevron {
+  margin-left: auto;
+  transition: transform 0.2s;
+}
+
+.agents.collapsed {
+  overflow: hidden;
+}
+
+.agents.collapsed .agents-head {
+  margin-bottom: 0;
+}
+
+.agents.collapsed .agents-chevron {
+  transform: rotate(-90deg);
+}
+
+.agents.collapsed .agent-list {
+  display: none;
+}
+
 .agent-card {
   position: relative;
   padding: 8px 10px 8px 12px;
